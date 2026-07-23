@@ -1,12 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App.jsx";
 
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!url || !anonKey) {
-  console.warn(
-    "Supabase não configurado. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY (veja o README.md)."
-  );
-}
-
-export const supabase = createClient(url, anonKey);
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

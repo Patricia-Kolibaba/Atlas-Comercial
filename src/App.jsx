@@ -240,6 +240,7 @@ export default function CRM() {
               activities={scopedActivities} clientById={clientById}
               toggleActivity={toggleActivity}
               onNewActivity={() => setShowActivityModal(true)}
+              isAdmin={isAdmin} vendedoras={db.vendedoras} vendedoraById={vendedoraById}
             />
           )}
           {view === "pipeline" && (
@@ -256,6 +257,7 @@ export default function CRM() {
               clients={scopedClients} isAdmin={isAdmin} vendedoraById={vendedoraById}
               deals={db.deals} stageById={stageById}
               onNewClient={() => setShowClientModal(true)}
+              vendedoras={db.vendedoras} assignClient={assignClient}
             />
           )}
           {view === "distribuir" && isAdmin && (
@@ -349,9 +351,11 @@ function Sidebar({ view, setView, isAdmin, pendingCount }) {
 }
 
 // ---------------- Atividades (dedicated tab) ----------------
-function AtividadesView({ activities, clientById, toggleActivity, onNewActivity }) {
+function AtividadesView({ activities, clientById, toggleActivity, onNewActivity, isAdmin, vendedoras, vendedoraById }) {
+  const [filtroVendedora, setFiltroVendedora] = useState("");
   const todayS = todayStr();
-  const enriched = activities.map(a => ({ ...a, red: !a.concluida && a.data <= todayS }));
+  const filtered = isAdmin && filtroVendedora ? activities.filter(a => a.vendedoraId === filtroVendedora) : activities;
+  const enriched = filtered.map(a => ({ ...a, red: !a.concluida && a.data <= todayS }));
   const key = (a) => `${a.data}${a.hora || "00:00"}`;
   const hojeAtrasadas = enriched.filter(a => a.red).sort((a, b) => key(a).localeCompare(key(b)));
   const proximas = enriched.filter(a => !a.concluida && !a.red).sort((a, b) => key(a).localeCompare(key(b)));
@@ -359,6 +363,7 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity 
 
   const Row = ({ a }) => {
     const client = clientById(a.clientId);
+    const vend = isAdmin ? vendedoraById(a.vendedoraId) : null;
     const [y, m, d] = a.data.split("-");
     return (
       <div
@@ -380,6 +385,9 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity 
           </div>
           <div className="text-xs mt-0.5 truncate" style={{ color: "#667085" }}>{a.descricao || "Sem descrição"}</div>
         </div>
+        {vend && (
+          <span className="text-[11px] font-medium shrink-0 rounded-full px-2 py-0.5" style={{ background: "#EEF1F4", color: "#344054" }}>{vend.nome}</span>
+        )}
         <div className="text-xs shrink-0 flex items-center gap-1.5" style={{ color: a.red ? "#E5484D" : "#98A2B3" }}>
           <Calendar size={12} /> {d}/{m} <Clock size={12} className="ml-1" /> {a.hora}
         </div>
@@ -399,11 +407,24 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity 
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-3">
         <div className="text-sm" style={{ color: "#667085" }}>{enriched.filter(a => !a.concluida).length} atividade(s) pendente(s)</div>
-        <button onClick={onNewActivity} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white" style={{ background: "#1FBE7A" }}>
-          <Plus size={14} /> Nova atividade
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <select
+              value={filtroVendedora}
+              onChange={(e) => setFiltroVendedora(e.target.value)}
+              className="text-sm rounded-lg border px-2.5 py-1.5"
+              style={{ borderColor: "#D7DCE3", color: "#344054" }}
+            >
+              <option value="">Todas as vendedoras</option>
+              {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+            </select>
+          )}
+          <button onClick={onNewActivity} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white" style={{ background: "#1FBE7A" }}>
+            <Plus size={14} /> Nova atividade
+          </button>
+        </div>
       </div>
       <Section title="Hoje e atrasadas" items={hojeAtrasadas} tone="red" />
       <Section title="Próximas" items={proximas} />
@@ -555,7 +576,7 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
 }
 
 // ---------------- Clientes ----------------
-function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNewClient }) {
+function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNewClient, vendedoras, assignClient }) {
   const [q, setQ] = useState("");
   const filtered = clients.filter(c => (c.nome + c.empresa).toLowerCase().includes(q.toLowerCase()));
   return (
@@ -596,7 +617,19 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
                   <td className="px-4 py-2.5">
                     {stage ? <span className="text-xs font-medium rounded-full px-2 py-0.5" style={{ background: stage.won ? "#E7F9F1" : stage.closed ? "#FDEDEE" : "#EEF1F4", color: stage.won ? "#17A868" : stage.closed ? "#E5484D" : "#344054" }}>{stage.nome}</span> : <span className="text-xs" style={{ color: "#B4BCC6" }}>—</span>}
                   </td>
-                  {isAdmin && <td className="px-4 py-2.5" style={{ color: "#475467" }}>{vend ? vend.nome : <span style={{ color: "#B4BCC6" }}>Não atribuído</span>}</td>}
+                  {isAdmin && (
+                    <td className="px-4 py-2.5">
+                      <select
+                        value={c.vendedoraId || ""}
+                        onChange={(e) => assignClient(c.id, e.target.value || null, true)}
+                        className="text-sm rounded-md border px-2 py-1"
+                        style={{ borderColor: "#D7DCE3", color: vend ? "#344054" : "#B4BCC6" }}
+                      >
+                        <option value="">Não atribuído</option>
+                        {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+                      </select>
+                    </td>
+                  )}
                 </tr>
               );
             })}

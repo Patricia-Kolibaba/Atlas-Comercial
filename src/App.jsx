@@ -220,6 +220,18 @@ export default function CRM() {
     setDb(prev => ({ ...prev, stages: prev.stages.filter(s => s.id !== stageId) }));
   };
 
+  const renameStage = (stageId, novoNome) => {
+    if (!novoNome.trim()) return;
+    setDb(prev => ({ ...prev, stages: prev.stages.map(s => s.id === stageId ? { ...s, nome: novoNome.trim() } : s) }));
+  };
+
+  const bulkAssignClients = (clientIds, vendedoraId) => {
+    if (!clientIds.length) return;
+    clientIds.forEach(id => assignClient(id, vendedoraId || null, true));
+    const vend = db.vendedoras.find(v => v.id === vendedoraId);
+    showToast(`${clientIds.length} cliente(s) atribuído(s) a ${vend ? vend.nome : "Não atribuído"}.`);
+  };
+
   return (
     <div className="flex h-full min-h-[640px] w-full overflow-hidden" style={{ background: "#F5F6F8", fontFamily: "'Inter', -apple-system, 'Segoe UI', sans-serif" }}>
       <Sidebar
@@ -249,7 +261,7 @@ export default function CRM() {
               clientById={clientById} vendedoraById={vendedoraById}
               updateDeal={updateDeal} scopedActivities={scopedActivities}
               onNewDeal={() => setShowDealModal(true)}
-              addStage={addStage} removeStage={removeStage}
+              addStage={addStage} removeStage={removeStage} renameStage={renameStage}
             />
           )}
           {view === "clientes" && (
@@ -258,6 +270,7 @@ export default function CRM() {
               deals={db.deals} stageById={stageById}
               onNewClient={() => setShowClientModal(true)}
               vendedoras={db.vendedoras} assignClient={assignClient}
+              bulkAssignClients={bulkAssignClients}
             />
           )}
           {view === "distribuir" && isAdmin && (
@@ -288,7 +301,18 @@ export default function CRM() {
           clients={isAdmin ? db.clients : scopedClients}
           vendedoras={db.vendedoras} stages={db.stages}
           onClose={() => setShowDealModal(false)}
-          onSave={(deal) => { addDeal(deal); setShowDealModal(false); showToast("Negócio criado."); }}
+          onSave={({ deal, atividade }) => {
+            const newDealId = uid("d");
+            setDb(prev => {
+              const deals = [...prev.deals, { id: newDealId, criadoEm: todayStr(), ...deal }];
+              const activities = atividade
+                ? [...prev.activities, { id: uid("a"), concluida: false, dealId: newDealId, clientId: deal.clientId, vendedoraId: deal.vendedoraId, ...atividade }]
+                : prev.activities;
+              return { ...prev, deals, activities };
+            });
+            setShowDealModal(false);
+            showToast(atividade ? "Negócio e atividade criados." : "Negócio criado.");
+          }}
         />
       )}
       {showClientModal && (
@@ -475,11 +499,25 @@ function TopBar({ view, isAdmin, currentUser, users, showUserMenu, setShowUserMe
 }
 
 // ---------------- Pipeline (Kanban) ----------------
-function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, updateDeal, scopedActivities, onNewDeal, addStage, removeStage }) {
+function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, updateDeal, scopedActivities, onNewDeal, addStage, removeStage, renameStage }) {
   const [showStageMgr, setShowStageMgr] = useState(false);
   const [newStageName, setNewStageName] = useState("");
+  const [editingStageId, setEditingStageId] = useState(null);
+  const [editingStageName, setEditingStageName] = useState("");
 
   const pendingCountFor = (dealId) => scopedActivities.filter(a => a.dealId === dealId && !a.concluida).length;
+
+  const startEdit = (stage) => { setEditingStageId(stage.id); setEditingStageName(stage.nome); };
+  const commitEdit = () => {
+    if (editingStageId) renameStage(editingStageId, editingStageName);
+    setEditingStageId(null);
+  };
+
+  const fmtDate = (iso) => {
+    if (!iso) return null;
+    const [y, m, d] = iso.split("-");
+    return `${d}/${m}/${y}`;
+  };
 
   return (
     <div>
@@ -502,14 +540,30 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
       {showStageMgr && (
         <div className="mb-4 rounded-lg border p-3 flex flex-wrap items-center gap-2" style={{ borderColor: "#E4E7EC", background: "#fff" }}>
           {db.stages.map(s => (
-            <span key={s.id} className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 text-xs font-medium" style={{ background: "#F5F6F8", color: "#344054" }}>
-              {s.nome}
-              {!s.protected && (
-                <button onClick={() => removeStage(s.id)} className="rounded-full p-0.5 hover:bg-gray-200">
-                  <X size={11} />
+            editingStageId === s.id ? (
+              <span key={s.id} className="flex items-center gap-1 rounded-full pl-1 pr-1 py-1" style={{ background: "#F5F6F8" }}>
+                <input
+                  autoFocus
+                  value={editingStageName}
+                  onChange={e => setEditingStageName(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingStageId(null); }}
+                  className="text-xs rounded-full px-2 py-1 border"
+                  style={{ borderColor: "#D7DCE3", width: 140 }}
+                />
+                <button onClick={commitEdit} className="rounded-full p-1" style={{ background: "#1FBE7A", color: "#fff" }}>
+                  <CheckCircle2 size={12} />
                 </button>
-              )}
-            </span>
+              </span>
+            ) : (
+              <span key={s.id} className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 text-xs font-medium" style={{ background: "#F5F6F8", color: "#344054" }}>
+                <button onClick={() => startEdit(s)} className="hover:underline">{s.nome}</button>
+                {!s.protected && (
+                  <button onClick={() => removeStage(s.id)} className="rounded-full p-0.5 hover:bg-gray-200">
+                    <X size={11} />
+                  </button>
+                )}
+              </span>
+            )
           ))}
           <div className="flex items-center gap-1 ml-2">
             <input value={newStageName} onChange={e => setNewStageName(e.target.value)} placeholder="Nova etapa" className={inputCls} style={{ ...inputStyle, width: 140, padding: "5px 8px" }} />
@@ -517,6 +571,7 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
               <Plus size={13} />
             </button>
           </div>
+          <div className="text-[11px] w-full" style={{ color: "#98A2B3" }}>Clique no nome de uma etapa para renomeá-la.</div>
         </div>
       )}
 
@@ -535,12 +590,23 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
                   const client = clientById(deal.clientId);
                   const vend = vendedoraById(deal.vendedoraId);
                   const pend = pendingCountFor(deal.id);
+                  const previsao = fmtDate(deal.previsaoFechamento);
                   return (
                     <div key={deal.id} className="rounded-lg border bg-white p-3" style={{ borderColor: "#E4E7EC" }}>
                       <div className="text-sm font-semibold mb-0.5" style={{ color: "#172433" }}>{deal.titulo}</div>
                       <div className="text-xs mb-1.5 flex items-center gap-1" style={{ color: "#667085" }}>
                         <Building2 size={11} /> {client?.empresa || client?.nome || "—"}
                       </div>
+                      {deal.contato && (
+                        <div className="text-xs mb-1.5 flex items-center gap-1" style={{ color: "#667085" }}>
+                          <Users size={11} /> {deal.contato}
+                        </div>
+                      )}
+                      {previsao && (
+                        <div className="text-xs mb-1.5 flex items-center gap-1" style={{ color: "#667085" }}>
+                          <Calendar size={11} /> Previsão: {previsao}
+                        </div>
+                      )}
                       <div className="text-sm font-semibold mb-2 flex items-center gap-1" style={{ color: "#1FBE7A" }}>
                         <DollarSign size={13} /> {brl(deal.valor)}
                       </div>
@@ -576,9 +642,23 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
 }
 
 // ---------------- Clientes ----------------
-function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNewClient, vendedoras, assignClient }) {
+function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients }) {
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState([]);
+  const [bulkVendedoraId, setBulkVendedoraId] = useState("");
   const filtered = clients.filter(c => (c.nome + c.empresa).toLowerCase().includes(q.toLowerCase()));
+
+  const allSelected = filtered.length > 0 && filtered.every(c => selected.includes(c.id));
+  const toggleAll = () => setSelected(allSelected ? [] : filtered.map(c => c.id));
+  const toggleOne = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const applyBulk = () => {
+    if (!selected.length) return;
+    bulkAssignClients(selected, bulkVendedoraId || null);
+    setSelected([]);
+    setBulkVendedoraId("");
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -590,10 +670,36 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
           <Plus size={14} /> Novo cliente
         </button>
       </div>
+
+      {isAdmin && selected.length > 0 && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: "#BEE6D2", background: "#F0FBF6" }}>
+          <span className="text-sm font-medium" style={{ color: "#17A868" }}>{selected.length} selecionado(s)</span>
+          <select
+            value={bulkVendedoraId}
+            onChange={(e) => setBulkVendedoraId(e.target.value)}
+            className="text-sm rounded-md border px-2 py-1 ml-2"
+            style={{ borderColor: "#D7DCE3", color: "#344054" }}
+          >
+            <option value="">Não atribuído</option>
+            {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+          </select>
+          <button onClick={applyBulk} className="rounded-md px-3 py-1.5 text-xs font-medium text-white" style={{ background: "#17A868" }}>
+            Atribuir selecionados
+          </button>
+          <button onClick={() => setSelected([])} className="text-xs font-medium ml-auto" style={{ color: "#667085" }}>
+            Limpar seleção
+          </button>
+        </div>
+      )}
       <div className="rounded-xl border overflow-hidden bg-white" style={{ borderColor: "#E4E7EC" }}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ background: "#F9FAFB" }}>
+              {isAdmin && (
+                <th className="text-left px-4 py-2.5 w-8">
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                </th>
+              )}
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Cliente</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Empresa</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Contato</th>
@@ -608,6 +714,11 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
               const vend = vendedoraById(c.vendedoraId);
               return (
                 <tr key={c.id} className="border-t" style={{ borderColor: "#F0F1F3" }}>
+                  {isAdmin && (
+                    <td className="px-4 py-2.5">
+                      <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} />
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}>{c.nome}</td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.empresa}</td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>
@@ -634,7 +745,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 5 : 4} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
+              <tr><td colSpan={isAdmin ? 6 : 4} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
             )}
           </tbody>
         </table>
@@ -883,37 +994,54 @@ function ActivityModal({ isAdmin, currentUser, clients, deals, vendedoras, onClo
 function DealModal({ isAdmin, currentUser, clients, vendedoras, stages, onClose, onSave }) {
   const [clientId, setClientId] = useState(clients[0]?.id || "");
   const [titulo, setTitulo] = useState("");
+  const [contato, setContato] = useState("");
+  const [previsaoFechamento, setPrevisaoFechamento] = useState("");
   const [valor, setValor] = useState("");
   const [etapa, setEtapa] = useState(stages[0]?.id || "");
   const [vendedoraId, setVendedoraId] = useState(isAdmin ? (vendedoras[0]?.id || "") : currentUser.id);
   const [error, setError] = useState("");
 
+  const [agendarAtividade, setAgendarAtividade] = useState(false);
+  const [atTipo, setAtTipo] = useState(ACTIVITY_TYPES[0]);
+  const [atDescricao, setAtDescricao] = useState("");
+  const [atData, setAtData] = useState(todayStr());
+  const [atHora, setAtHora] = useState(nowTimeStr());
+
   const submit = () => {
-    if (!clientId || !titulo.trim() || !vendedoraId) { setError("Preencha cliente, título e vendedora."); return; }
-    onSave({ clientId, titulo: titulo.trim(), valor: Number(valor) || 0, etapa, vendedoraId });
+    if (!clientId || !titulo.trim() || !vendedoraId) { setError("Preencha revenda, nome do projeto e vendedora."); return; }
+    if (agendarAtividade && (!atData || !atHora)) { setError("Preencha data e horário da atividade, ou desmarque \"Agendar atividade\"."); return; }
+    const deal = { clientId, titulo: titulo.trim(), contato: contato.trim(), previsaoFechamento, valor: Number(valor) || 0, etapa, vendedoraId };
+    const atividade = agendarAtividade ? { tipo: atTipo, descricao: atDescricao, data: atData, hora: atHora } : null;
+    onSave({ deal, atividade });
   };
 
   return (
     <ModalShell title="Novo negócio" onClose={onClose} onSubmit={submit}>
       {error && <div className="text-xs rounded-md px-2.5 py-1.5" style={{ background: "#FDEDEE", color: "#E5484D" }}>{error}</div>}
-      <Field label="Cliente">
+      <Field label="Revenda / Cliente">
         <select value={clientId} onChange={e => setClientId(e.target.value)} className={inputCls} style={inputStyle}>
           {clients.map(c => <option key={c.id} value={c.id}>{c.nome} — {c.empresa}</option>)}
         </select>
       </Field>
-      <Field label="Título do negócio">
-        <input value={titulo} onChange={e => setTitulo(e.target.value)} className={inputCls} style={inputStyle} placeholder="Ex: Plano anual - Empresa X" />
+      <Field label="Nome do projeto">
+        <input value={titulo} onChange={e => setTitulo(e.target.value)} className={inputCls} style={inputStyle} placeholder="Ex: Implantação de ponto - Empresa X" />
+      </Field>
+      <Field label="Pessoa de contato da revenda">
+        <input value={contato} onChange={e => setContato(e.target.value)} className={inputCls} style={inputStyle} placeholder="Nome de quem você fala na revenda" />
       </Field>
       <div className="grid grid-cols-2 gap-3">
+        <Field label="Previsão de fechamento">
+          <input type="date" value={previsaoFechamento} onChange={e => setPrevisaoFechamento(e.target.value)} className={inputCls} style={inputStyle} />
+        </Field>
         <Field label="Valor (R$)">
           <input type="number" value={valor} onChange={e => setValor(e.target.value)} className={inputCls} style={inputStyle} placeholder="0" />
         </Field>
-        <Field label="Etapa inicial">
-          <select value={etapa} onChange={e => setEtapa(e.target.value)} className={inputCls} style={inputStyle}>
-            {stages.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-          </select>
-        </Field>
       </div>
+      <Field label="Etapa inicial">
+        <select value={etapa} onChange={e => setEtapa(e.target.value)} className={inputCls} style={inputStyle}>
+          {stages.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+        </select>
+      </Field>
       {isAdmin && (
         <Field label="Vendedora responsável">
           <select value={vendedoraId} onChange={e => setVendedoraId(e.target.value)} className={inputCls} style={inputStyle}>
@@ -921,6 +1049,40 @@ function DealModal({ isAdmin, currentUser, clients, vendedoras, stages, onClose,
           </select>
         </Field>
       )}
+
+      <div className="rounded-lg border mt-1" style={{ borderColor: "#E4E7EC" }}>
+        <button
+          type="button"
+          onClick={() => setAgendarAtividade(v => !v)}
+          className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium"
+          style={{ color: "#172433" }}
+        >
+          <span className="flex items-center gap-2"><Calendar size={14} /> Agendar atividade para esse negócio</span>
+          <span className="text-xs rounded-full px-2 py-0.5" style={{ background: agendarAtividade ? "#E7F9F1" : "#F5F6F8", color: agendarAtividade ? "#17A868" : "#98A2B3" }}>
+            {agendarAtividade ? "Sim" : "Não"}
+          </span>
+        </button>
+        {agendarAtividade && (
+          <div className="px-3 pb-3 flex flex-col gap-3 border-t pt-3" style={{ borderColor: "#F0F1F3" }}>
+            <Field label="Tipo">
+              <select value={atTipo} onChange={e => setAtTipo(e.target.value)} className={inputCls} style={inputStyle}>
+                {ACTIVITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Descrição">
+              <textarea value={atDescricao} onChange={e => setAtDescricao(e.target.value)} rows={2} className={inputCls} style={inputStyle} placeholder="O que precisa ser feito?" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Data *">
+                <input type="date" value={atData} onChange={e => setAtData(e.target.value)} className={inputCls} style={inputStyle} required />
+              </Field>
+              <Field label="Horário *">
+                <input type="time" value={atHora} onChange={e => setAtHora(e.target.value)} className={inputCls} style={inputStyle} required />
+              </Field>
+            </div>
+          </div>
+        )}
+      </div>
     </ModalShell>
   );
 }

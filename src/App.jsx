@@ -267,7 +267,7 @@ export default function CRM() {
           {view === "clientes" && (
             <ClientesView
               clients={scopedClients} isAdmin={isAdmin} vendedoraById={vendedoraById}
-              deals={db.deals} stageById={stageById}
+              deals={db.deals} stages={db.stages} stageById={stageById}
               onNewClient={() => setShowClientModal(true)}
               vendedoras={db.vendedoras} assignClient={assignClient}
               bulkAssignClients={bulkAssignClients}
@@ -642,11 +642,28 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
 }
 
 // ---------------- Clientes ----------------
-function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients }) {
+function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState([]);
   const [bulkVendedoraId, setBulkVendedoraId] = useState("");
-  const filtered = clients.filter(c => (c.nome + c.empresa).toLowerCase().includes(q.toLowerCase()));
+  const [filtroVendedora, setFiltroVendedora] = useState("");
+  const [filtroEtapa, setFiltroEtapa] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
+
+  const dealByClientId = (id) => deals.find(d => d.clientId === id);
+
+  const estadosDisponiveis = Array.from(new Set(clients.map(c => c.estado).filter(Boolean))).sort();
+
+  const filtered = clients.filter(c => {
+    if (!(c.nome + c.empresa).toLowerCase().includes(q.toLowerCase())) return false;
+    if (filtroVendedora && c.vendedoraId !== filtroVendedora) return false;
+    if (filtroEstado && c.estado !== filtroEstado) return false;
+    if (filtroEtapa) {
+      const deal = dealByClientId(c.id);
+      if (!deal || deal.etapa !== filtroEtapa) return false;
+    }
+    return true;
+  });
 
   const allSelected = filtered.length > 0 && filtered.every(c => selected.includes(c.id));
   const toggleAll = () => setSelected(allSelected ? [] : filtered.map(c => c.id));
@@ -659,14 +676,40 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
     setBulkVendedoraId("");
   };
 
+  const selectCls = "text-sm rounded-lg border px-2.5 py-2";
+  const selectStyle = { borderColor: "#D7DCE3", color: "#344054" };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="relative w-72">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <div className="relative w-64">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#98A2B3" }} />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar cliente ou empresa" className={inputCls} style={{ ...inputStyle, paddingLeft: 32 }} />
         </div>
-        <button onClick={onNewClient} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white" style={{ background: "#1FBE7A" }}>
+        {isAdmin && (
+          <select value={filtroVendedora} onChange={e => setFiltroVendedora(e.target.value)} className={selectCls} style={selectStyle}>
+            <option value="">Todas as vendedoras</option>
+            {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+          </select>
+        )}
+        <select value={filtroEtapa} onChange={e => setFiltroEtapa(e.target.value)} className={selectCls} style={selectStyle}>
+          <option value="">Todas as etapas</option>
+          {stages.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+        </select>
+        <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)} className={selectCls} style={selectStyle}>
+          <option value="">Todos os estados</option>
+          {estadosDisponiveis.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+        </select>
+        {(filtroVendedora || filtroEtapa || filtroEstado || q) && (
+          <button
+            onClick={() => { setQ(""); setFiltroVendedora(""); setFiltroEtapa(""); setFiltroEstado(""); }}
+            className="text-xs font-medium"
+            style={{ color: "#667085" }}
+          >
+            Limpar filtros
+          </button>
+        )}
+        <button onClick={onNewClient} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white ml-auto" style={{ background: "#1FBE7A" }}>
           <Plus size={14} /> Novo cliente
         </button>
       </div>
@@ -702,6 +745,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
               )}
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Cliente</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Empresa</th>
+              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>UF</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Contato</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Etapa</th>
               {isAdmin && <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Vendedora</th>}
@@ -721,6 +765,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
                   )}
                   <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}>{c.nome}</td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.empresa}</td>
+                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.estado || "—"}</td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>
                     <div className="flex items-center gap-1"><Phone size={11} /> {c.telefone}</div>
                     <div className="flex items-center gap-1 mt-0.5"><Mail size={11} /> {c.email}</div>
@@ -745,7 +790,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stageById, onNew
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 6 : 4} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
+              <tr><td colSpan={isAdmin ? 7 : 5} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
             )}
           </tbody>
         </table>
@@ -839,10 +884,11 @@ function ImportarView({ setDb, showToast }) {
     const file = e.target.files[0]; if (!file) return;
     parseFile(file, (rows) => {
       const parsed = rows.map(r => ({
-        nome: pick(r, ["nome", "name", "cliente"]),
-        empresa: pick(r, ["empresa", "company"]),
+        nome: pick(r, ["nome", "name", "cliente", "revenda"]),
+        empresa: pick(r, ["empresa", "company", "revenda", "fantasia"]),
         telefone: pick(r, ["telefone", "phone", "fone", "celular"]),
         email: pick(r, ["email", "e-mail"]),
+        estado: pick(r, ["estado", "uf"]).toUpperCase().slice(0, 2),
       })).filter(r => r.nome);
       setClientPreview(parsed);
     });
@@ -907,7 +953,7 @@ function ImportarView({ setDb, showToast }) {
         onFile={handleClientFile}
         preview={clientPreview}
         onConfirm={confirmClients}
-        columns={["nome", "empresa", "telefone", "email"]}
+        columns={["nome", "empresa", "telefone", "email", "estado"]}
       />
     </div>
   );
@@ -1092,12 +1138,13 @@ function ClientModal({ isAdmin, currentUser, vendedoras, onClose, onSave }) {
   const [empresa, setEmpresa] = useState("");
   const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
+  const [estado, setEstado] = useState("");
   const [vendedoraId, setVendedoraId] = useState(isAdmin ? "" : currentUser.id);
   const [error, setError] = useState("");
 
   const submit = () => {
     if (!nome.trim()) { setError("Informe ao menos o nome do cliente."); return; }
-    onSave({ nome: nome.trim(), empresa: empresa.trim(), telefone: telefone.trim(), email: email.trim(), vendedoraId: vendedoraId || null });
+    onSave({ nome: nome.trim(), empresa: empresa.trim(), telefone: telefone.trim(), email: email.trim(), estado: estado.trim().toUpperCase(), vendedoraId: vendedoraId || null });
   };
 
   return (
@@ -1109,6 +1156,7 @@ function ClientModal({ isAdmin, currentUser, vendedoras, onClose, onSave }) {
         <Field label="Telefone"><input value={telefone} onChange={e => setTelefone(e.target.value)} className={inputCls} style={inputStyle} /></Field>
         <Field label="E-mail"><input value={email} onChange={e => setEmail(e.target.value)} className={inputCls} style={inputStyle} /></Field>
       </div>
+      <Field label="Estado (UF)"><input value={estado} onChange={e => setEstado(e.target.value)} maxLength={2} className={inputCls} style={{ ...inputStyle, width: 80, textTransform: "uppercase" }} placeholder="SP" /></Field>
       {isAdmin && (
         <Field label="Vendedora responsável (opcional)">
           <select value={vendedoraId} onChange={e => setVendedoraId(e.target.value)} className={inputCls} style={inputStyle}>

@@ -232,6 +232,20 @@ export default function CRM() {
     showToast(`${clientIds.length} cliente(s) atribuído(s) a ${vend ? vend.nome : "Não atribuído"}.`);
   };
 
+  const deleteVendedora = (vendedoraId) => {
+    const hasClients = db.clients.some(c => c.vendedoraId === vendedoraId);
+    if (hasClients) { showToast("Essa vendedora ainda tem clientes atribuídos. Reatribua-os (na aba Clientes) antes de excluir."); return; }
+    const nome = db.vendedoras.find(v => v.id === vendedoraId)?.nome || "Vendedora";
+    setDb(prev => ({
+      ...prev,
+      vendedoras: prev.vendedoras.filter(v => v.id !== vendedoraId),
+      deals: prev.deals.filter(d => d.vendedoraId !== vendedoraId),
+      activities: prev.activities.filter(a => a.vendedoraId !== vendedoraId),
+    }));
+    if (currentUserId === vendedoraId) setCurrentUserId("admin");
+    showToast(`${nome} foi excluída.`);
+  };
+
   return (
     <div className="flex h-full min-h-[640px] w-full overflow-hidden" style={{ background: "#F5F6F8", fontFamily: "'Inter', -apple-system, 'Segoe UI', sans-serif" }}>
       <Sidebar
@@ -276,11 +290,11 @@ export default function CRM() {
           {view === "distribuir" && isAdmin && (
             <DistribuirView
               clients={db.clients} vendedoras={db.vendedoras}
-              assignClient={assignClient} distributeAuto={distributeAuto}
+              assignClient={assignClient} bulkAssignClients={bulkAssignClients} distributeAuto={distributeAuto}
             />
           )}
           {view === "importar" && isAdmin && (
-            <ImportarView setDb={setDb} showToast={showToast} />
+            <ImportarView setDb={setDb} showToast={showToast} vendedoras={db.vendedoras} clients={db.clients} deleteVendedora={deleteVendedora} />
           )}
         </div>
       </div>
@@ -800,13 +814,34 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
 }
 
 // ---------------- Distribuir ----------------
-function DistribuirView({ clients, vendedoras, assignClient, distributeAuto }) {
-  const unassigned = clients.filter(c => !c.vendedoraId);
+function DistribuirView({ clients, vendedoras, assignClient, bulkAssignClients, distributeAuto }) {
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState([]);
+  const [bulkVendedoraId, setBulkVendedoraId] = useState("");
+
+  const unassignedAll = clients.filter(c => !c.vendedoraId);
+  const unassigned = unassignedAll.filter(c => (c.nome + c.empresa).toLowerCase().includes(q.toLowerCase()));
+
+  const allSelected = unassigned.length > 0 && unassigned.every(c => selected.includes(c.id));
+  const toggleAll = () => setSelected(allSelected ? [] : unassigned.map(c => c.id));
+  const toggleOne = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const applyBulk = () => {
+    if (!selected.length || !bulkVendedoraId) return;
+    bulkAssignClients(selected, bulkVendedoraId);
+    setSelected([]);
+    setBulkVendedoraId("");
+  };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="text-sm" style={{ color: "#667085" }}>{unassigned.length} cliente(s) sem vendedora atribuída</div>
-        <button onClick={distributeAuto} disabled={unassigned.length === 0 || vendedoras.length === 0} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40" style={{ background: "#172433" }}>
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <div className="relative w-64">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#98A2B3" }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar cliente ou empresa" className={inputCls} style={{ ...inputStyle, paddingLeft: 32 }} />
+        </div>
+        <div className="text-sm" style={{ color: "#667085" }}>{unassignedAll.length} cliente(s) sem vendedora atribuída</div>
+        <button onClick={distributeAuto} disabled={unassignedAll.length === 0 || vendedoras.length === 0} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 ml-auto" style={{ background: "#172433" }}>
           <Shuffle size={14} /> Distribuir automaticamente
         </button>
       </div>
@@ -815,10 +850,33 @@ function DistribuirView({ clients, vendedoras, assignClient, distributeAuto }) {
           <AlertCircle size={15} /> Cadastre vendedoras primeiro na aba Importar.
         </div>
       )}
+      {selected.length > 0 && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border px-3 py-2" style={{ borderColor: "#BEE6D2", background: "#F0FBF6" }}>
+          <span className="text-sm font-medium" style={{ color: "#17A868" }}>{selected.length} selecionado(s)</span>
+          <select
+            value={bulkVendedoraId}
+            onChange={(e) => setBulkVendedoraId(e.target.value)}
+            className="text-sm rounded-md border px-2 py-1 ml-2"
+            style={{ borderColor: "#D7DCE3", color: "#344054" }}
+          >
+            <option value="">Selecionar vendedora</option>
+            {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+          </select>
+          <button onClick={applyBulk} disabled={!bulkVendedoraId} className="rounded-md px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40" style={{ background: "#17A868" }}>
+            Atribuir selecionados
+          </button>
+          <button onClick={() => setSelected([])} className="text-xs font-medium ml-auto" style={{ color: "#667085" }}>
+            Limpar seleção
+          </button>
+        </div>
+      )}
       <div className="rounded-xl border overflow-hidden bg-white" style={{ borderColor: "#E4E7EC" }}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ background: "#F9FAFB" }}>
+              <th className="text-left px-4 py-2.5 w-8">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+              </th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Cliente</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Empresa</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Atribuir a</th>
@@ -827,6 +885,9 @@ function DistribuirView({ clients, vendedoras, assignClient, distributeAuto }) {
           <tbody>
             {unassigned.map(c => (
               <tr key={c.id} className="border-t" style={{ borderColor: "#F0F1F3" }}>
+                <td className="px-4 py-2.5">
+                  <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} />
+                </td>
                 <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}>{c.nome}</td>
                 <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.empresa}</td>
                 <td className="px-4 py-2.5">
@@ -843,7 +904,9 @@ function DistribuirView({ clients, vendedoras, assignClient, distributeAuto }) {
               </tr>
             ))}
             {unassigned.length === 0 && (
-              <tr><td colSpan={3} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Todos os clientes já foram distribuídos 🎉</td></tr>
+              <tr><td colSpan={4} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>
+                {unassignedAll.length === 0 ? "Todos os clientes já foram distribuídos 🎉" : "Nenhum cliente encontrado para essa busca."}
+              </td></tr>
             )}
           </tbody>
         </table>
@@ -853,7 +916,7 @@ function DistribuirView({ clients, vendedoras, assignClient, distributeAuto }) {
 }
 
 // ---------------- Importar ----------------
-function ImportarView({ setDb, showToast }) {
+function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }) {
   const [vendPreview, setVendPreview] = useState(null);
   const [clientPreview, setClientPreview] = useState(null);
 
@@ -938,23 +1001,55 @@ function ImportarView({ setDb, showToast }) {
   );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <Card
-        title="Importar vendedoras"
-        hint="CSV com colunas: nome, email"
-        onFile={handleVendFile}
-        preview={vendPreview}
-        onConfirm={confirmVend}
-        columns={["nome", "email"]}
-      />
-      <Card
-        title="Importar clientes"
-        hint="CSV com colunas: nome, empresa, telefone, email — depois distribua na aba Distribuir"
-        onFile={handleClientFile}
-        preview={clientPreview}
-        onConfirm={confirmClients}
-        columns={["nome", "empresa", "telefone", "email", "estado"]}
-      />
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card
+          title="Importar vendedoras"
+          hint="CSV com colunas: nome, email"
+          onFile={handleVendFile}
+          preview={vendPreview}
+          onConfirm={confirmVend}
+          columns={["nome", "email"]}
+        />
+        <Card
+          title="Importar clientes"
+          hint="CSV com colunas: nome, empresa, telefone, email — depois distribua na aba Distribuir"
+          onFile={handleClientFile}
+          preview={clientPreview}
+          onConfirm={confirmClients}
+          columns={["nome", "empresa", "telefone", "email", "estado"]}
+        />
+      </div>
+
+      <div className="rounded-xl border bg-white p-5" style={{ borderColor: "#E4E7EC" }}>
+        <div className="font-semibold text-sm mb-1" style={{ color: "#172433" }}>Vendedoras cadastradas</div>
+        <div className="text-xs mb-3" style={{ color: "#98A2B3" }}>Para excluir uma vendedora, primeiro reatribua os clientes dela na aba Clientes.</div>
+        {vendedoras.length === 0 ? (
+          <div className="text-sm py-4 text-center" style={{ color: "#98A2B3" }}>Nenhuma vendedora cadastrada ainda.</div>
+        ) : (
+          <div className="flex flex-col divide-y" style={{ borderColor: "#F0F1F3" }}>
+            {vendedoras.map(v => {
+              const count = clients.filter(c => c.vendedoraId === v.id).length;
+              return (
+                <div key={v.id} className="flex items-center justify-between py-2.5">
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: "#172433" }}>{v.nome}</div>
+                    <div className="text-xs" style={{ color: "#98A2B3" }}>{v.email || "sem e-mail"} · {count} cliente(s)</div>
+                  </div>
+                  <button
+                    onClick={() => deleteVendedora(v.id)}
+                    disabled={count > 0}
+                    className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: "#FDEDEE", color: "#E5484D" }}
+                  >
+                    <Trash2 size={13} /> Excluir
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

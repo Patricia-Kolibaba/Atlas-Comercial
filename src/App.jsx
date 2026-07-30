@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
+import { HashRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
 import {
   Plus, Upload, Users, Phone, Mail, Building2, Calendar, Clock,
   CheckCircle2, Circle, ChevronDown, X, LayoutGrid, List as ListIcon,
   UserPlus, Shuffle, Trash2, AlertCircle, Search, DollarSign,
-  Settings2, ArrowRight, LogIn, RotateCcw
+  Settings2, ArrowRight, LogIn, LogOut, RotateCcw,
+  LayoutDashboard, Package, BarChart3, Sliders
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -58,21 +60,152 @@ function seedData() {
 const inputCls = "w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors";
 const inputStyle = { borderColor: "#D7DCE3", background: "#fff" };
 
-export default function CRM() {
+// ---------------- Autenticação (Supabase Auth real) ----------------
+const AuthContext = createContext(null);
+const useAuth = () => useContext(AuthContext);
+
+function AuthProvider({ children }) {
+  const [session, setSession] = useState(undefined); // undefined = ainda carregando
+  const [profile, setProfile] = useState(null);
+  const [profileError, setProfileError] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, sess) => setSession(sess));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!session) { setProfile(null); return; }
+    (async () => {
+      const { data, error } = await supabase.from("users").select("*").eq("id", session.user.id).maybeSingle();
+      if (error) { setProfileError(error.message); return; }
+      setProfile(data);
+    })();
+  }, [session]);
+
+  const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password });
+  const signOut = () => supabase.auth.signOut();
+
+  return (
+    <AuthContext.Provider value={{ session, profile, profileError, signIn, signOut, loading: session === undefined }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+function LoginPage() {
+  const { signIn } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(""); setLoading(true);
+    const { error } = await signIn(email, password);
+    setLoading(false);
+    if (error) setError("E-mail ou senha incorretos.");
+  };
+
+  return (
+    <div className="flex items-center justify-center min-h-[600px] h-full w-full" style={{ background: "#F5F6F8", fontFamily: "'Inter', -apple-system, 'Segoe UI', sans-serif" }}>
+      <form onSubmit={submit} className="w-full max-w-sm rounded-xl border bg-white p-6" style={{ borderColor: "#E4E7EC" }}>
+        <div className="flex items-center gap-2 mb-6">
+          <div className="h-8 w-8 rounded-md flex items-center justify-center font-bold text-sm" style={{ background: "#1FBE7A", color: "#0E1620" }}>V</div>
+          <span className="font-semibold text-lg" style={{ color: "#172433" }}>Vendaflow CRM</span>
+        </div>
+        {error && <div className="text-xs rounded-md px-2.5 py-1.5 mb-3" style={{ background: "#FDEDEE", color: "#E5484D" }}>{error}</div>}
+        <label className="flex flex-col gap-1 mb-3">
+          <span className="text-xs font-medium" style={{ color: "#475467" }}>E-mail</span>
+          <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className={inputCls} style={inputStyle} />
+        </label>
+        <label className="flex flex-col gap-1 mb-5">
+          <span className="text-xs font-medium" style={{ color: "#475467" }}>Senha</span>
+          <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className={inputCls} style={inputStyle} />
+        </label>
+        <button type="submit" disabled={loading} className="w-full rounded-lg py-2 text-sm font-medium text-white disabled:opacity-60" style={{ background: "#1FBE7A" }}>
+          {loading ? "Entrando..." : "Entrar"}
+        </button>
+        <div className="text-xs mt-4 text-center" style={{ color: "#98A2B3" }}>
+          Sua conta é criada pelo administrador no painel do Supabase.
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ---------------- Sidebar (novo menu, com rotas reais) ----------------
+function AppSidebar({ isAdmin, pendingCount, nome, onLogout }) {
+  const navItem = (to, label, Icon, badge) => (
+    <NavLink
+      to={to}
+      className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
+      style={({ isActive }) => ({
+        background: isActive ? "rgba(31,190,122,0.16)" : "transparent",
+        color: isActive ? "#3FE0A0" : "#B6C0CC",
+      })}
+    >
+      <Icon size={16} />
+      <span className="flex-1 text-left">{label}</span>
+      {!!badge && (
+        <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#E5484D", color: "#fff" }}>{badge}</span>
+      )}
+    </NavLink>
+  );
+
+  return (
+    <div className="w-60 shrink-0 flex flex-col" style={{ background: "#16202D" }}>
+      <div className="px-4 pt-5 pb-4">
+        <div className="flex items-center gap-2 mb-6">
+          <div className="h-7 w-7 rounded-md flex items-center justify-center font-bold text-sm" style={{ background: "#1FBE7A", color: "#0E1620" }}>V</div>
+          <span className="text-white font-semibold text-[15px] tracking-tight">Vendaflow CRM</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          {navItem("/dashboard", "Dashboard", LayoutDashboard)}
+          {navItem("/atividades", "Atividades", Clock, pendingCount)}
+          {navItem("/negociacoes", "Negociações", LayoutGrid)}
+          {navItem("/clientes", "Clientes", Users)}
+          {navItem("/produtos", "Produtos", Package)}
+          {isAdmin && navItem("/relatorios", "Relatórios", BarChart3)}
+          {isAdmin && navItem("/distribuir", "Distribuir", Shuffle)}
+          {isAdmin && navItem("/importar", "Importar", Upload)}
+          {isAdmin && navItem("/configuracoes", "Configurações", Sliders)}
+        </div>
+      </div>
+      <div className="flex-1" />
+      <div className="px-4 pb-5">
+        <div className="text-xs mb-2 truncate" style={{ color: "#8A97A6" }}>{nome}</div>
+        <button onClick={onLogout} className="flex items-center gap-2 text-xs font-medium" style={{ color: "#B6C0CC" }}>
+          <LogOut size={13} /> Sair
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EmConstrucao({ titulo }) {
+  return (
+    <div className="rounded-xl border bg-white p-10 text-center" style={{ borderColor: "#E4E7EC" }}>
+      <div className="text-base font-semibold mb-1" style={{ color: "#172433" }}>{titulo}</div>
+      <div className="text-sm" style={{ color: "#98A2B3" }}>Essa área faz parte da nova arquitetura e será construída na próxima etapa.</div>
+    </div>
+  );
+}
+
+// ---------------- CRM Shell (dados + rotas) ----------------
+function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
   const [db, setDb] = useState(null);
   const [loaded, setLoaded] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState("admin");
-  const [view, setView] = useState("atividades");
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showDealModal, setShowDealModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
   const [toast, setToast] = useState(null);
 
-  const lastSyncedRef = useRef(null); // avoids re-saving data that just arrived from realtime
+  const lastSyncedRef = useRef(null);
   const [loadError, setLoadError] = useState(null);
 
-  // load initial data from Supabase (creates the row with seed data on first run)
   useEffect(() => {
     (async () => {
       const { data: row, error } = await supabase.from("crm_data").select("data").eq("id", "main").maybeSingle();
@@ -90,7 +223,6 @@ export default function CRM() {
     })();
   }, []);
 
-  // save to Supabase whenever local data changes (skip if it's identical to what we last synced)
   useEffect(() => {
     if (!loaded || !db) return;
     const serialized = JSON.stringify(db);
@@ -99,17 +231,16 @@ export default function CRM() {
       lastSyncedRef.current = serialized;
       const { error } = await supabase.from("crm_data").update({ data: db, updated_at: new Date().toISOString() }).eq("id", "main");
       if (error) console.error("Falha ao salvar no Supabase:", error.message);
-    }, 400); // small debounce so rapid edits don't spam the database
+    }, 400);
     return () => clearTimeout(t);
   }, [db, loaded]);
 
-  // live sync: pick up changes made by teammates in real time
   useEffect(() => {
     const channel = supabase
       .channel("crm_data_changes")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crm_data", filter: "id=eq.main" }, (payload) => {
         const incoming = JSON.stringify(payload.new.data);
-        if (incoming === lastSyncedRef.current) return; // it's our own write coming back
+        if (incoming === lastSyncedRef.current) return;
         lastSyncedRef.current = incoming;
         setDb(payload.new.data);
       })
@@ -119,27 +250,18 @@ export default function CRM() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
-  const users = useMemo(() => {
-    if (!db) return [];
-    return [{ id: "admin", nome: "Administrador", role: "admin" },
-      ...db.vendedoras.map(v => ({ id: v.id, nome: v.nome, role: "vendedora" }))];
-  }, [db]);
-
-  const currentUser = users.find(u => u.id === currentUserId) || users[0];
-
   if (loadError) {
     return (
       <div className="flex items-center justify-center h-full min-h-[500px] p-6" style={{ background: "#F5F6F8" }}>
         <div className="max-w-md rounded-xl border bg-white p-5 text-sm" style={{ borderColor: "#F3B7B9", color: "#C0393E" }}>
           <div className="font-semibold mb-1">Não foi possível conectar ao Supabase</div>
           <div style={{ color: "#667085" }}>{loadError}</div>
-          <div className="mt-2" style={{ color: "#667085" }}>Confira se as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY estão configuradas e se a tabela crm_data foi criada (veja o README).</div>
         </div>
       </div>
     );
   }
 
-  if (!loaded || !db || !currentUser) {
+  if (!loaded || !db) {
     return (
       <div className="flex items-center justify-center h-full min-h-[500px]" style={{ background: "#F5F6F8" }}>
         <div className="text-sm" style={{ color: "#667085" }}>Carregando CRM…</div>
@@ -147,7 +269,6 @@ export default function CRM() {
     );
   }
 
-  const isAdmin = currentUser.role === "admin";
   const scopedClients = db.clients.filter(c => isAdmin || c.vendedoraId === currentUser.id);
   const scopedDeals = db.deals.filter(d => isAdmin || d.vendedoraId === currentUser.id);
   const scopedActivities = db.activities.filter(a => isAdmin || a.vendedoraId === currentUser.id);
@@ -164,9 +285,6 @@ export default function CRM() {
 
   const toggleActivity = (id) =>
     setDb(prev => ({ ...prev, activities: prev.activities.map(a => a.id === id ? { ...a, concluida: !a.concluida } : a) }));
-
-  const addDeal = (deal) =>
-    setDb(prev => ({ ...prev, deals: [...prev.deals, { id: uid("d"), criadoEm: todayStr(), ...deal }] }));
 
   const addClient = (client) =>
     setDb(prev => ({ ...prev, clients: [...prev.clients, { id: uid("c"), ...client }] }));
@@ -235,160 +353,129 @@ export default function CRM() {
   const deleteVendedora = (vendedoraId) => {
     const hasClients = db.clients.some(c => c.vendedoraId === vendedoraId);
     if (hasClients) { showToast("Essa vendedora ainda tem clientes atribuídos. Reatribua-os (na aba Clientes) antes de excluir."); return; }
-    const nome = db.vendedoras.find(v => v.id === vendedoraId)?.nome || "Vendedora";
+    const nomeV = db.vendedoras.find(v => v.id === vendedoraId)?.nome || "Vendedora";
     setDb(prev => ({
       ...prev,
       vendedoras: prev.vendedoras.filter(v => v.id !== vendedoraId),
       deals: prev.deals.filter(d => d.vendedoraId !== vendedoraId),
       activities: prev.activities.filter(a => a.vendedoraId !== vendedoraId),
     }));
-    if (currentUserId === vendedoraId) setCurrentUserId("admin");
-    showToast(`${nome} foi excluída.`);
+    showToast(`${nomeV} foi excluída.`);
   };
 
-  return (
-    <div className="flex h-full min-h-[640px] w-full overflow-hidden" style={{ background: "#F5F6F8", fontFamily: "'Inter', -apple-system, 'Segoe UI', sans-serif" }}>
-      <Sidebar
-        view={view} setView={setView} isAdmin={isAdmin}
-        pendingCount={scopedActivities.filter(a => !a.concluida && a.data <= todayStr()).length}
-      />
-
-      <div className="flex-1 flex flex-col min-w-0">
-        <TopBar
-          view={view} isAdmin={isAdmin} currentUser={currentUser} users={users}
-          showUserMenu={showUserMenu} setShowUserMenu={setShowUserMenu}
-          setCurrentUserId={setCurrentUserId}
-        />
-
-        <div className="flex-1 overflow-auto p-5">
-          {view === "atividades" && (
-            <AtividadesView
-              activities={scopedActivities} clientById={clientById}
-              toggleActivity={toggleActivity}
-              onNewActivity={() => setShowActivityModal(true)}
-              isAdmin={isAdmin} vendedoras={db.vendedoras} vendedoraById={vendedoraById}
-            />
-          )}
-          {view === "pipeline" && (
-            <PipelineView
-              db={db} scopedDeals={scopedDeals} isAdmin={isAdmin}
-              clientById={clientById} vendedoraById={vendedoraById}
-              updateDeal={updateDeal} scopedActivities={scopedActivities}
-              onNewDeal={() => setShowDealModal(true)}
-              addStage={addStage} removeStage={removeStage} renameStage={renameStage}
-            />
-          )}
-          {view === "clientes" && (
-            <ClientesView
-              clients={scopedClients} isAdmin={isAdmin} vendedoraById={vendedoraById}
-              deals={db.deals} stages={db.stages} stageById={stageById}
-              onNewClient={() => setShowClientModal(true)}
-              vendedoras={db.vendedoras} assignClient={assignClient}
-              bulkAssignClients={bulkAssignClients}
-            />
-          )}
-          {view === "distribuir" && isAdmin && (
-            <DistribuirView
-              clients={db.clients} vendedoras={db.vendedoras}
-              assignClient={assignClient} bulkAssignClients={bulkAssignClients} distributeAuto={distributeAuto}
-            />
-          )}
-          {view === "importar" && isAdmin && (
-            <ImportarView setDb={setDb} showToast={showToast} vendedoras={db.vendedoras} clients={db.clients} deleteVendedora={deleteVendedora} />
-          )}
-        </div>
-      </div>
-
-      {showActivityModal && (
-        <ActivityModal
-          isAdmin={isAdmin} currentUser={currentUser}
-          clients={isAdmin ? db.clients : scopedClients}
-          deals={isAdmin ? db.deals : scopedDeals}
-          vendedoras={db.vendedoras}
-          onClose={() => setShowActivityModal(false)}
-          onSave={(act) => { addActivity(act); setShowActivityModal(false); showToast("Atividade criada."); }}
-        />
-      )}
-      {showDealModal && (
-        <DealModal
-          isAdmin={isAdmin} currentUser={currentUser}
-          clients={isAdmin ? db.clients : scopedClients}
-          vendedoras={db.vendedoras} stages={db.stages}
-          onClose={() => setShowDealModal(false)}
-          onSave={({ deal, atividade }) => {
-            const newDealId = uid("d");
-            setDb(prev => {
-              const deals = [...prev.deals, { id: newDealId, criadoEm: todayStr(), ...deal }];
-              const activities = atividade
-                ? [...prev.activities, { id: uid("a"), concluida: false, dealId: newDealId, clientId: deal.clientId, vendedoraId: deal.vendedoraId, ...atividade }]
-                : prev.activities;
-              return { ...prev, deals, activities };
-            });
-            setShowDealModal(false);
-            showToast(atividade ? "Negócio e atividade criados." : "Negócio criado.");
-          }}
-        />
-      )}
-      {showClientModal && (
-        <ClientModal
-          isAdmin={isAdmin} currentUser={currentUser} vendedoras={db.vendedoras}
-          onClose={() => setShowClientModal(false)}
-          onSave={(c) => { addClient(c); setShowClientModal(false); showToast("Cliente adicionado."); }}
-        />
-      )}
-
-      {toast && (
-        <div className="fixed bottom-5 right-5 rounded-lg px-4 py-3 text-sm text-white shadow-lg z-50" style={{ background: "#172433" }}>
-          {toast}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------- Sidebar (nav tabs) ----------------
-function Sidebar({ view, setView, isAdmin, pendingCount }) {
-  const navItem = (key, label, Icon, badge) => (
-    <button
-      onClick={() => setView(key)}
-      className="flex items-center gap-2.5 w-full rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
-      style={{
-        background: view === key ? "rgba(31,190,122,0.16)" : "transparent",
-        color: view === key ? "#3FE0A0" : "#B6C0CC",
-      }}
-    >
-      <Icon size={16} />
-      <span className="flex-1 text-left">{label}</span>
-      {!!badge && (
-        <span className="text-[10px] font-semibold rounded-full px-1.5 py-0.5" style={{ background: "#E5484D", color: "#fff" }}>{badge}</span>
-      )}
-    </button>
-  );
+  const pendingCount = scopedActivities.filter(a => !a.concluida && a.data <= todayStr()).length;
 
   return (
-    <div className="w-60 shrink-0 flex flex-col" style={{ background: "#16202D" }}>
-      <div className="px-4 pt-5 pb-4">
-        <div className="flex items-center gap-2 mb-6">
-          <div className="h-7 w-7 rounded-md flex items-center justify-center font-bold text-sm" style={{ background: "#1FBE7A", color: "#0E1620" }}>V</div>
-          <span className="text-white font-semibold text-[15px] tracking-tight">Vendaflow CRM</span>
+    <HashRouter>
+      <div className="flex h-full min-h-[640px] w-full overflow-hidden" style={{ background: "#F5F6F8", fontFamily: "'Inter', -apple-system, 'Segoe UI', sans-serif" }}>
+        <AppSidebar isAdmin={isAdmin} pendingCount={pendingCount} nome={nome} onLogout={onLogout} />
+
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex items-center justify-between border-b px-5 py-3.5" style={{ borderColor: "#E4E7EC", background: "#fff" }}>
+            <h1 className="text-lg font-semibold" style={{ color: "#172433" }}>Vendaflow CRM</h1>
+            <div className="flex items-center gap-2">
+              <div className="h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-semibold text-white" style={{ background: isAdmin ? "#172433" : "#1FBE7A" }}>
+                {nome.slice(0, 1).toUpperCase()}
+              </div>
+              <span className="text-sm font-medium" style={{ color: "#172433" }}>{nome}</span>
+              {isAdmin && <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded" style={{ background: "#EEF1F4", color: "#667085" }}>admin</span>}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto p-5">
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<EmConstrucao titulo="Dashboard" />} />
+              <Route path="/atividades" element={
+                <AtividadesView
+                  activities={scopedActivities} clientById={clientById}
+                  toggleActivity={toggleActivity}
+                  onNewActivity={() => setShowActivityModal(true)}
+                  isAdmin={isAdmin} vendedoras={db.vendedoras} vendedoraById={vendedoraById}
+                />
+              } />
+              <Route path="/negociacoes" element={
+                <PipelineView
+                  db={db} scopedDeals={scopedDeals} isAdmin={isAdmin}
+                  clientById={clientById} vendedoraById={vendedoraById}
+                  updateDeal={updateDeal} scopedActivities={scopedActivities}
+                  onNewDeal={() => setShowDealModal(true)}
+                  addStage={addStage} removeStage={removeStage} renameStage={renameStage}
+                />
+              } />
+              <Route path="/clientes" element={
+                <ClientesView
+                  clients={scopedClients} isAdmin={isAdmin} vendedoraById={vendedoraById}
+                  deals={db.deals} stages={db.stages} stageById={stageById}
+                  onNewClient={() => setShowClientModal(true)}
+                  vendedoras={db.vendedoras} assignClient={assignClient}
+                  bulkAssignClients={bulkAssignClients}
+                />
+              } />
+              <Route path="/produtos" element={<EmConstrucao titulo="Produtos" />} />
+              {isAdmin && <Route path="/relatorios" element={<EmConstrucao titulo="Relatórios" />} />}
+              {isAdmin && <Route path="/distribuir" element={
+                <DistribuirView
+                  clients={db.clients} vendedoras={db.vendedoras}
+                  assignClient={assignClient} bulkAssignClients={bulkAssignClients} distributeAuto={distributeAuto}
+                />
+              } />}
+              {isAdmin && <Route path="/importar" element={
+                <ImportarView setDb={setDb} showToast={showToast} vendedoras={db.vendedoras} clients={db.clients} deleteVendedora={deleteVendedora} />
+              } />}
+              {isAdmin && <Route path="/configuracoes" element={<EmConstrucao titulo="Configurações" />} />}
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </div>
         </div>
-        <div className="flex flex-col gap-1">
-          {navItem("atividades", "Atividades", Clock, pendingCount)}
-          {navItem("pipeline", "Negócios", LayoutGrid)}
-          {navItem("clientes", "Clientes", Users)}
-          {isAdmin && navItem("distribuir", "Distribuir", Shuffle)}
-          {isAdmin && navItem("importar", "Importar", Upload)}
-        </div>
+
+        {showActivityModal && (
+          <ActivityModal
+            isAdmin={isAdmin} currentUser={currentUser}
+            clients={isAdmin ? db.clients : scopedClients}
+            deals={isAdmin ? db.deals : scopedDeals}
+            vendedoras={db.vendedoras}
+            onClose={() => setShowActivityModal(false)}
+            onSave={(act) => { addActivity(act); setShowActivityModal(false); showToast("Atividade criada."); }}
+          />
+        )}
+        {showDealModal && (
+          <DealModal
+            isAdmin={isAdmin} currentUser={currentUser}
+            clients={isAdmin ? db.clients : scopedClients}
+            vendedoras={db.vendedoras} stages={db.stages}
+            onClose={() => setShowDealModal(false)}
+            onSave={({ deal, atividade }) => {
+              const newDealId = uid("d");
+              setDb(prev => {
+                const deals = [...prev.deals, { id: newDealId, criadoEm: todayStr(), ...deal }];
+                const activities = atividade
+                  ? [...prev.activities, { id: uid("a"), concluida: false, dealId: newDealId, clientId: deal.clientId, vendedoraId: deal.vendedoraId, ...atividade }]
+                  : prev.activities;
+                return { ...prev, deals, activities };
+              });
+              setShowDealModal(false);
+              showToast(atividade ? "Negócio e atividade criados." : "Negócio criado.");
+            }}
+          />
+        )}
+        {showClientModal && (
+          <ClientModal
+            isAdmin={isAdmin} currentUser={currentUser} vendedoras={db.vendedoras}
+            onClose={() => setShowClientModal(false)}
+            onSave={(c) => { addClient(c); setShowClientModal(false); showToast("Cliente adicionado."); }}
+          />
+        )}
+
+        {toast && (
+          <div className="fixed bottom-5 right-5 rounded-lg px-4 py-3 text-sm text-white shadow-lg z-50" style={{ background: "#172433" }}>
+            {toast}
+          </div>
+        )}
       </div>
-      <div className="flex-1" />
-      <div className="px-4 pb-5 text-[11px] leading-snug" style={{ color: "#4F5D6B" }}>
-        Dados compartilhados entre todos os usuários deste CRM.
-      </div>
-    </div>
+    </HashRouter>
   );
 }
-
-// ---------------- Atividades (dedicated tab) ----------------
 function AtividadesView({ activities, clientById, toggleActivity, onNewActivity, isAdmin, vendedoras, vendedoraById }) {
   const [filtroVendedora, setFiltroVendedora] = useState("");
   const todayS = todayStr();
@@ -474,45 +561,6 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity,
   );
 }
 
-// ---------------- Top bar ----------------
-function TopBar({ view, isAdmin, currentUser, users, showUserMenu, setShowUserMenu, setCurrentUserId }) {
-  const titles = { atividades: "Atividades", pipeline: "Negócios", clientes: "Clientes", distribuir: "Distribuir clientes", importar: "Importar dados" };
-  return (
-    <div className="flex items-center justify-between border-b px-5 py-3.5" style={{ borderColor: "#E4E7EC", background: "#fff" }}>
-      <h1 className="text-lg font-semibold" style={{ color: "#172433" }}>{titles[view] || ""}</h1>
-      <div className="relative">
-        <button
-          onClick={() => setShowUserMenu(v => !v)}
-          className="flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium"
-          style={{ borderColor: "#D7DCE3", color: "#172433" }}
-        >
-          <div className="h-6 w-6 rounded-full flex items-center justify-center text-[11px] font-semibold text-white" style={{ background: isAdmin ? "#172433" : "#1FBE7A" }}>
-            {currentUser.nome.slice(0, 1).toUpperCase()}
-          </div>
-          {currentUser.nome} {isAdmin && <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded" style={{ background: "#EEF1F4", color: "#667085" }}>admin</span>}
-          <ChevronDown size={14} />
-        </button>
-        {showUserMenu && (
-          <div className="absolute right-0 mt-1 w-56 rounded-lg border bg-white shadow-lg z-30 py-1" style={{ borderColor: "#E4E7EC" }}>
-            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase" style={{ color: "#98A2B3" }}>Entrar como</div>
-            {users.map(u => (
-              <button
-                key={u.id}
-                onClick={() => { setCurrentUserId(u.id); setShowUserMenu(false); }}
-                className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50"
-                style={{ color: u.id === currentUser.id ? "#1FBE7A" : "#344054" }}
-              >
-                <LogIn size={13} /> {u.nome} {u.role === "admin" && <span className="text-[10px] ml-auto uppercase" style={{ color: "#98A2B3" }}>admin</span>}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------- Pipeline (Kanban) ----------------
 function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, updateDeal, scopedActivities, onNewDeal, addStage, removeStage, renameStage }) {
   const [showStageMgr, setShowStageMgr] = useState(false);
   const [newStageName, setNewStageName] = useState("");
@@ -655,7 +703,6 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
   );
 }
 
-// ---------------- Clientes ----------------
 function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState([]);
@@ -813,7 +860,6 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
   );
 }
 
-// ---------------- Distribuir ----------------
 function DistribuirView({ clients, vendedoras, assignClient, bulkAssignClients, distributeAuto }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState([]);
@@ -915,7 +961,6 @@ function DistribuirView({ clients, vendedoras, assignClient, bulkAssignClients, 
   );
 }
 
-// ---------------- Importar ----------------
 function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }) {
   const [vendPreview, setVendPreview] = useState(null);
   const [clientPreview, setClientPreview] = useState(null);
@@ -1054,7 +1099,6 @@ function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }
   );
 }
 
-// ---------------- Modals ----------------
 function ModalShell({ title, onClose, children, onSubmit, submitLabel = "Salvar" }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center p-4" style={{ background: "rgba(15,20,26,0.45)" }}>
@@ -1261,5 +1305,80 @@ function ClientModal({ isAdmin, currentUser, vendedoras, onClose, onSave }) {
         </Field>
       )}
     </ModalShell>
+  );
+}
+
+// ---------------- Root ----------------
+function AuthenticatedApp() {
+  const { session, profile, profileError, signOut, loading } = useAuth();
+  const [matchDb, setMatchDb] = useState(null);
+  const [matchLoaded, setMatchLoaded] = useState(false);
+
+  // busca só os dados necessários para casar o e-mail logado com uma vendedora cadastrada
+  useEffect(() => {
+    if (!profile || profile.role === "admin") { setMatchLoaded(true); return; }
+    (async () => {
+      const { data } = await supabase.from("crm_data").select("data").eq("id", "main").maybeSingle();
+      setMatchDb(data?.data || null);
+      setMatchLoaded(true);
+    })();
+  }, [profile]);
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-full min-h-[500px]" style={{ background: "#F5F6F8" }}><div className="text-sm" style={{ color: "#667085" }}>Carregando…</div></div>;
+  }
+
+  if (!session) return <LoginPage />;
+
+  if (profileError) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[500px] p-6" style={{ background: "#F5F6F8" }}>
+        <div className="max-w-md rounded-xl border bg-white p-5 text-sm" style={{ borderColor: "#F3B7B9", color: "#C0393E" }}>
+          <div className="font-semibold mb-1">Erro ao carregar seu perfil</div>
+          <div style={{ color: "#667085" }}>{profileError}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return <div className="flex items-center justify-center h-full min-h-[500px]" style={{ background: "#F5F6F8" }}><div className="text-sm" style={{ color: "#667085" }}>Carregando seu perfil…</div></div>;
+  }
+
+  const isAdmin = profile.role === "admin";
+
+  if (isAdmin) {
+    return <CrmShell isAdmin nome={profile.nome} currentUser={{ id: "admin", nome: profile.nome, role: "admin" }} onLogout={signOut} />;
+  }
+
+  if (!matchLoaded) {
+    return <div className="flex items-center justify-center h-full min-h-[500px]" style={{ background: "#F5F6F8" }}><div className="text-sm" style={{ color: "#667085" }}>Carregando…</div></div>;
+  }
+
+  const matched = matchDb?.vendedoras?.find(v => v.email && profile.email && v.email.toLowerCase() === profile.email.toLowerCase());
+
+  if (!matched) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[500px] p-6" style={{ background: "#F5F6F8" }}>
+        <div className="max-w-md rounded-xl border bg-white p-5 text-sm text-center" style={{ borderColor: "#F5D0B5" }}>
+          <div className="font-semibold mb-1" style={{ color: "#172433" }}>Conta ainda não vinculada</div>
+          <div style={{ color: "#667085" }}>
+            Seu login funcionou, mas o e-mail <strong>{profile.email}</strong> ainda não está cadastrado como vendedora no CRM.
+            Peça para o administrador conferir esse e-mail na aba Importar.
+          </div>
+          <button onClick={signOut} className="mt-4 text-xs font-medium" style={{ color: "#98A2B3" }}>Sair</button>
+        </div>
+      </div>
+    );
+  }
+
+  return <CrmShell isAdmin={false} nome={matched.nome} currentUser={{ id: matched.id, nome: matched.nome, role: "vendedora" }} onLogout={signOut} />;
+}
+
+export default function Root() {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   );
 }

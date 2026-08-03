@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
-import { HashRouter, Routes, Route, NavLink, Navigate } from "react-router-dom";
+import { HashRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
+import ClientePage from "./ClientePage";
 import {
   Plus, Upload, Users, Phone, Mail, Building2, Calendar, Clock,
   CheckCircle2, Circle, ChevronDown, X, LayoutGrid, List as ListIcon,
@@ -410,6 +411,12 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
                   onNewClient={() => setShowClientModal(true)}
                   vendedoras={db.vendedoras} assignClient={assignClient}
                   bulkAssignClients={bulkAssignClients}
+                />
+              } />
+              <Route path="/clientes/:clienteId" element={
+                <ClientePage
+                  db={db} setDb={setDb} isAdmin={isAdmin} currentUser={currentUser}
+                  vendedoraById={vendedoraById} stageById={stageById} showToast={showToast}
                 />
               } />
               <Route path="/produtos" element={<EmConstrucao titulo="Produtos" />} />
@@ -824,7 +831,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                       <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} />
                     </td>
                   )}
-                  <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}>{c.nome}</td>
+                  <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}><Link to={`/clientes/${c.id}`} className="hover:underline" style={{ color: "#172433" }}>{c.nome}</Link></td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.empresa}</td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.estado || "—"}</td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>

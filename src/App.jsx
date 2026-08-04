@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
-import { HashRouter, Routes, Route, NavLink, Navigate, Link } from "react-router-dom";
+'import { HashRouter, Routes, Route, NavLink, Navigate, Link, useNavigate }' from "react-router-dom";
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
 import ClientePage from "./ClientePage";
@@ -566,6 +566,7 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
   );
 }
 function AtividadesView({ activities, clientById, toggleActivity, onNewActivity, isAdmin, vendedoras, vendedoraById }) {
+  const navigate = useNavigate();
   const [filtroVendedora, setFiltroVendedora] = useState("");
   const todayS = todayStr();
   const filtered = isAdmin && filtroVendedora ? activities.filter(a => a.vendedoraId === filtroVendedora) : activities;
@@ -575,39 +576,69 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity,
   const proximas = enriched.filter(a => !a.concluida && !a.red).sort((a, b) => key(a).localeCompare(key(b)));
   const concluidas = enriched.filter(a => a.concluida).sort((a, b) => key(b).localeCompare(key(a)));
 
-  const Row = ({ a }) => {
-    const client = clientById(a.clientId);
-    const vend = isAdmin ? vendedoraById(a.vendedoraId) : null;
-    const [y, m, d] = a.data.split("-");
-    return (
-      <div
-        className="flex items-center gap-3 rounded-xl border px-4 py-3"
-        style={{ borderColor: a.red ? "#F3B7B9" : "#E4E7EC", background: a.red ? "#FFF8F8" : "#fff" }}
-      >
-        <button onClick={() => toggleActivity(a.id)} className="shrink-0">
-          {a.concluida ? <CheckCircle2 size={19} style={{ color: "#1FBE7A" }} /> : <Circle size={19} style={{ color: a.red ? "#E5484D" : "#98A2B3" }} />}
-        </button>
-        <div className="min-w-0 flex-1">
-          <div
-            className="text-sm font-semibold truncate"
-            style={{
-              color: a.concluida ? "#98A2B3" : a.red ? "#C0393E" : "#172433",
-              textDecoration: a.concluida ? "line-through" : "none",
-            }}
-          >
-            {a.tipo} · {client?.nome || "Cliente"}
-          </div>
-          <div className="text-xs mt-0.5 truncate" style={{ color: "#667085" }}>{a.descricao || "Sem descrição"}</div>
-        </div>
-        {vend && (
-          <span className="text-[11px] font-medium shrink-0 rounded-full px-2 py-0.5" style={{ background: "#EEF1F4", color: "#344054" }}>{vend.nome}</span>
-        )}
-        <div className="text-xs shrink-0 flex items-center gap-1.5" style={{ color: a.red ? "#E5484D" : "#98A2B3" }}>
-          <Calendar size={12} /> {d}/{m} <Clock size={12} className="ml-1" /> {a.hora}
-        </div>
-      </div>
-    );
+  const irParaCliente = (a) => {
+    if (a.clientId) navigate(`/clientes/${a.clientId}`);
   };
+
+  const TabelaAtividades = ({ items }) => (
+    <div className="rounded-xl border overflow-hidden bg-white" style={{ borderColor: "#E4E7EC" }}>
+      <table className="w-full text-sm">
+        <thead>
+          <tr style={{ background: "#F9FAFB" }}>
+            <th className="text-left px-4 py-2.5 w-8"></th>
+            <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Atividade</th>
+            <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Data e hora</th>
+            <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Pessoa de contato</th>
+            {isAdmin && <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Vendedora</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(a => {
+            const client = clientById(a.clientId);
+            const vend = isAdmin ? vendedoraById(a.vendedoraId) : null;
+            const [y, m, d] = a.data.split("-");
+            return (
+              <tr
+                key={a.id}
+                onClick={() => irParaCliente(a)}
+                className="border-t"
+                style={{ borderColor: "#F0F1F3", background: a.red ? "#FFF8F8" : "#fff", cursor: a.clientId ? "pointer" : "default" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "#F5F6F8"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = a.red ? "#FFF8F8" : "#fff"; }}
+              >
+                <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => toggleActivity(a.id)} className="shrink-0 flex">
+                    {a.concluida ? <CheckCircle2 size={18} style={{ color: "#1FBE7A" }} /> : <Circle size={18} style={{ color: a.red ? "#E5484D" : "#98A2B3" }} />}
+                  </button>
+                </td>
+                <td className="px-4 py-2.5">
+                  <div
+                    className="font-semibold"
+                    style={{
+                      color: a.concluida ? "#98A2B3" : a.red ? "#C0393E" : "#172433",
+                      textDecoration: a.concluida ? "line-through" : "none",
+                    }}
+                  >
+                    {a.tipo}
+                  </div>
+                  <div className="text-xs mt-0.5" style={{ color: "#667085" }}>{a.descricao || "Sem descrição"}</div>
+                </td>
+                <td className="px-4 py-2.5 whitespace-nowrap" style={{ color: a.red ? "#E5484D" : "#475467" }}>
+                  <div className="flex items-center gap-1.5"><Calendar size={12} /> {d}/{m}<Clock size={12} className="ml-1.5" /> {a.hora}</div>
+                </td>
+                <td className="px-4 py-2.5" style={{ color: "#344054" }}>{client?.nome || "—"}</td>
+                {isAdmin && (
+                  <td className="px-4 py-2.5">
+                    {vend && <span className="text-[11px] font-medium rounded-full px-2 py-0.5" style={{ background: "#EEF1F4", color: "#344054" }}>{vend.nome}</span>}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 
   const Section = ({ title, items, tone }) =>
     items.length > 0 && (
@@ -615,7 +646,7 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity,
         <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: tone === "red" ? "#E5484D" : "#98A2B3" }}>
           {title} · {items.length}
         </div>
-        <div className="flex flex-col gap-2">{items.map(a => <Row key={a.id} a={a} />)}</div>
+        <TabelaAtividades items={items} />
       </div>
     );
 

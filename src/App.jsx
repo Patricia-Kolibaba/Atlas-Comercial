@@ -8,7 +8,7 @@ import {
   CheckCircle2, Circle, ChevronDown, X, LayoutGrid, List as ListIcon,
   UserPlus, Shuffle, Trash2, AlertCircle, Search, DollarSign,
   Settings2, ArrowRight, LogIn, LogOut, RotateCcw,
-  LayoutDashboard, Package, BarChart3, Sliders
+  LayoutDashboard, Package, BarChart3, Sliders, Eye, EyeOff
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -101,6 +101,10 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -110,29 +114,107 @@ function LoginPage() {
     if (error) setError("E-mail ou senha incorretos.");
   };
 
+  const sendReset = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) { setError("Digite seu e-mail para redefinir a senha."); return; }
+    setError(""); setForgotLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    setForgotLoading(false);
+    if (error) { setError("Não foi possível enviar o e-mail. Verifique o endereço."); return; }
+    setForgotSent(true);
+  };
+
   return (
     <div className="flex items-center justify-center min-h-[600px] h-full w-full" style={{ background: "#F5F6F8", fontFamily: "'Inter', -apple-system, 'Segoe UI', sans-serif" }}>
-      <form onSubmit={submit} className="w-full max-w-sm rounded-xl border bg-white p-6" style={{ borderColor: "#E4E7EC" }}>
+      <div className="w-full max-w-sm rounded-xl border bg-white p-6" style={{ borderColor: "#E4E7EC" }}>
+        {/* Logo */}
         <div className="flex items-center gap-2 mb-6">
           <div className="h-8 w-8 rounded-md flex items-center justify-center font-bold text-sm" style={{ background: "#1FBE7A", color: "#0E1620" }}>V</div>
           <span className="font-semibold text-lg" style={{ color: "#172433" }}>Vendaflow CRM</span>
         </div>
-        {error && <div className="text-xs rounded-md px-2.5 py-1.5 mb-3" style={{ background: "#FDEDEE", color: "#E5484D" }}>{error}</div>}
-        <label className="flex flex-col gap-1 mb-3">
-          <span className="text-xs font-medium" style={{ color: "#475467" }}>E-mail</span>
-          <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className={inputCls} style={inputStyle} />
-        </label>
-        <label className="flex flex-col gap-1 mb-5">
-          <span className="text-xs font-medium" style={{ color: "#475467" }}>Senha</span>
-          <input type="password" required value={password} onChange={e => setPassword(e.target.value)} className={inputCls} style={inputStyle} />
-        </label>
-        <button type="submit" disabled={loading} className="w-full rounded-lg py-2 text-sm font-medium text-white disabled:opacity-60" style={{ background: "#1FBE7A" }}>
-          {loading ? "Entrando..." : "Entrar"}
-        </button>
-        <div className="text-xs mt-4 text-center" style={{ color: "#98A2B3" }}>
-          Sua conta é criada pelo administrador no painel do Supabase.
-        </div>
-      </form>
+
+        {/* Modo: recuperar senha */}
+        {forgotMode ? (
+          forgotSent ? (
+            <div className="text-center py-4">
+              <div className="text-3xl mb-3">📬</div>
+              <p className="text-sm font-semibold mb-1" style={{ color: "#172433" }}>E-mail enviado!</p>
+              <p className="text-xs mb-4" style={{ color: "#667085" }}>
+                Verifique sua caixa de entrada em <strong>{email}</strong> e siga as instruções para redefinir sua senha.
+              </p>
+              <button onClick={() => { setForgotMode(false); setForgotSent(false); }}
+                className="text-sm font-medium" style={{ color: "#1FBE7A" }}>
+                ← Voltar para o login
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={sendReset}>
+              <p className="text-sm font-semibold mb-1" style={{ color: "#172433" }}>Redefinir senha</p>
+              <p className="text-xs mb-4" style={{ color: "#667085" }}>
+                Digite seu e-mail e enviaremos um link para você criar uma nova senha.
+              </p>
+              {error && <div className="text-xs rounded-md px-2.5 py-1.5 mb-3" style={{ background: "#FDEDEE", color: "#E5484D" }}>{error}</div>}
+              <label className="flex flex-col gap-1 mb-4">
+                <span className="text-xs font-medium" style={{ color: "#475467" }}>E-mail</span>
+                <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className={inputCls} style={inputStyle} />
+              </label>
+              <button type="submit" disabled={forgotLoading} className="w-full rounded-lg py-2 text-sm font-medium text-white disabled:opacity-60 mb-3" style={{ background: "#1FBE7A" }}>
+                {forgotLoading ? "Enviando..." : "Enviar link de redefinição"}
+              </button>
+              <button type="button" onClick={() => { setForgotMode(false); setError(""); }}
+                className="w-full text-sm text-center" style={{ color: "#667085" }}>
+                ← Voltar para o login
+              </button>
+            </form>
+          )
+        ) : (
+          /* Modo: login normal */
+          <form onSubmit={submit}>
+            {error && <div className="text-xs rounded-md px-2.5 py-1.5 mb-3" style={{ background: "#FDEDEE", color: "#E5484D" }}>{error}</div>}
+            <label className="flex flex-col gap-1 mb-3">
+              <span className="text-xs font-medium" style={{ color: "#475467" }}>E-mail</span>
+              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} className={inputCls} style={inputStyle} />
+            </label>
+            <div className="flex flex-col gap-1 mb-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium" style={{ color: "#475467" }}>Senha</span>
+                <button type="button" onClick={() => { setForgotMode(true); setError(""); }}
+                  className="text-xs" style={{ color: "#1FBE7A" }}>
+                  Esqueci minha senha
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPass ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className={inputCls}
+                  style={{ ...inputStyle, paddingRight: 38 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2"
+                  style={{ color: "#98A2B3", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                  tabIndex={-1}
+                >
+                  {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <div className="mb-5" />
+            <button type="submit" disabled={loading} className="w-full rounded-lg py-2 text-sm font-medium text-white disabled:opacity-60" style={{ background: "#1FBE7A" }}>
+              {loading ? "Entrando..." : "Entrar"}
+            </button>
+            <div className="text-xs mt-4 text-center" style={{ color: "#98A2B3" }}>
+              Sua conta é criada pelo administrador no painel do Supabase.
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

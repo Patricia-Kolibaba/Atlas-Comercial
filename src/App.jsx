@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
-'import { HashRouter, Routes, Route, NavLink, Navigate, Link, useNavigate }' from "react-router-dom";
+import { HashRouter, Routes, Route, NavLink, Navigate, Link, useNavigate } from "react-router-dom";
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
 import ClientePage from "./ClientePage";

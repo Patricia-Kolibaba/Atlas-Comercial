@@ -8,7 +8,7 @@ import {
   CheckCircle2, Circle, ChevronDown, X, LayoutGrid, List as ListIcon,
   UserPlus, Shuffle, Trash2, AlertCircle, Search, DollarSign,
   Settings2, ArrowRight, LogIn, LogOut, RotateCcw,
-  LayoutDashboard, Package, BarChart3, Sliders, Eye, EyeOff
+  LayoutDashboard, Package, BarChart3, Sliders, Eye, EyeOff, Edit3, RefreshCw
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -284,6 +284,7 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showDealModal, setShowDealModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
+  const [editingActivityId, setEditingActivityId] = useState(null);
   const [toast, setToast] = useState(null);
 
   const lastSyncedRef = useRef(null);
@@ -368,6 +369,20 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
 
   const toggleActivity = (id) =>
     setDb(prev => ({ ...prev, activities: prev.activities.map(a => a.id === id ? { ...a, concluida: !a.concluida } : a) }));
+
+  const registrarResultadoAtividade = (id, { texto, acao, novaData, novaHora }) =>
+    setDb(prev => ({
+      ...prev,
+      activities: prev.activities.map(a => {
+        if (a.id !== id) return a;
+        const entrada = { texto: texto.trim(), acao, quando: `${todayStr()} ${nowTimeStr()}` };
+        const historico = [...(a.historico || []), entrada];
+        if (acao === "reagendar") {
+          return { ...a, historico, resultado: texto.trim(), concluida: false, data: novaData, hora: novaHora };
+        }
+        return { ...a, historico, resultado: texto.trim(), concluida: true };
+      }),
+    }));
 
   const addClient = (client) =>
     setDb(prev => ({ ...prev, clients: [...prev.clients, { id: uid("c"), ...client }] }));
@@ -474,6 +489,7 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
                   activities={scopedActivities} clientById={clientById}
                   toggleActivity={toggleActivity}
                   onNewActivity={() => setShowActivityModal(true)}
+                  onEditActivity={(id) => setEditingActivityId(id)}
                   isAdmin={isAdmin} vendedoras={db.vendedoras} vendedoraById={vendedoraById}
                 />
               } />
@@ -555,6 +571,22 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
             onSave={(c) => { addClient(c); setShowClientModal(false); showToast("Cliente adicionado."); }}
           />
         )}
+        {editingActivityId && (() => {
+          const activity = db.activities.find(a => a.id === editingActivityId);
+          if (!activity) return null;
+          return (
+            <ActivityResultModal
+              activity={activity}
+              client={clientById(activity.clientId)}
+              onClose={() => setEditingActivityId(null)}
+              onSave={(payload) => {
+                registrarResultadoAtividade(editingActivityId, payload);
+                setEditingActivityId(null);
+                showToast(payload.acao === "reagendar" ? "Atividade reagendada." : "Atividade encerrada.");
+              }}
+            />
+          );
+        })()}
 
         {toast && (
           <div className="fixed bottom-5 right-5 rounded-lg px-4 py-3 text-sm text-white shadow-lg z-50" style={{ background: "#172433" }}>
@@ -565,7 +597,7 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
     </HashRouter>
   );
 }
-function AtividadesView({ activities, clientById, toggleActivity, onNewActivity, isAdmin, vendedoras, vendedoraById }) {
+function AtividadesView({ activities, clientById, toggleActivity, onNewActivity, onEditActivity, isAdmin, vendedoras, vendedoraById }) {
   const navigate = useNavigate();
   const [filtroVendedora, setFiltroVendedora] = useState("");
   const todayS = todayStr();
@@ -590,6 +622,7 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity,
             <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Data e hora</th>
             <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Pessoa de contato</th>
             {isAdmin && <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Vendedora</th>}
+            <th className="text-left px-4 py-2.5 font-medium w-16" style={{ color: "#667085" }}></th>
           </tr>
         </thead>
         <tbody>
@@ -632,6 +665,16 @@ function AtividadesView({ activities, clientById, toggleActivity, onNewActivity,
                     {vend && <span className="text-[11px] font-medium rounded-full px-2 py-0.5" style={{ background: "#EEF1F4", color: "#344054" }}>{vend.nome}</span>}
                   </td>
                 )}
+                <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => onEditActivity(a.id)}
+                    title="Editar / registrar resultado"
+                    className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium"
+                    style={{ color: "#344054", border: "1px solid #D7DCE3" }}
+                  >
+                    <Edit3 size={12} /> Editar
+                  </button>
+                </td>
               </tr>
             );
           })}
@@ -1292,6 +1335,90 @@ function ActivityModal({ isAdmin, currentUser, clients, deals, vendedoras, onClo
           <input type="time" value={hora} onChange={e => setHora(e.target.value)} className={inputCls} style={inputStyle} required />
         </Field>
       </div>
+    </ModalShell>
+  );
+}
+
+function ActivityResultModal({ activity, client, onClose, onSave }) {
+  const [texto, setTexto] = useState(activity.resultado || "");
+  const [acao, setAcao] = useState("encerrar");
+  const [novaData, setNovaData] = useState(activity.data);
+  const [novaHora, setNovaHora] = useState(activity.hora);
+  const [error, setError] = useState("");
+
+  const submit = () => {
+    if (!texto.trim()) { setError("Escreva o que foi feito nesta atividade."); return; }
+    if (acao === "reagendar" && (!novaData || !novaHora)) { setError("Preencha a nova data e horário."); return; }
+    onSave({ texto, acao, novaData, novaHora });
+  };
+
+  const historico = [...(activity.historico || [])].reverse();
+
+  return (
+    <ModalShell title={`${activity.tipo} — ${client?.nome || "Cliente"}`} onClose={onClose} onSubmit={submit} submitLabel={acao === "reagendar" ? "Salvar e reagendar" : "Salvar e encerrar"}>
+      {error && <div className="text-xs rounded-md px-2.5 py-1.5" style={{ background: "#FDEDEE", color: "#E5484D" }}>{error}</div>}
+
+      {activity.descricao && (
+        <div className="text-xs rounded-md px-2.5 py-1.5" style={{ background: "#F5F6F8", color: "#667085" }}>
+          <strong>Combinado: </strong>{activity.descricao}
+        </div>
+      )}
+
+      <Field label="O que foi feito *">
+        <textarea
+          value={texto}
+          onChange={e => setTexto(e.target.value)}
+          rows={3}
+          className={inputCls}
+          style={inputStyle}
+          placeholder="Ex: Liguei, cliente pediu para retornar na próxima semana."
+          autoFocus
+        />
+      </Field>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setAcao("encerrar")}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium"
+          style={acao === "encerrar" ? { borderColor: "#1FBE7A", background: "#F0FBF6", color: "#17A868" } : { borderColor: "#D7DCE3", color: "#667085" }}
+        >
+          <CheckCircle2 size={14} /> Encerrar atividade
+        </button>
+        <button
+          type="button"
+          onClick={() => setAcao("reagendar")}
+          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium"
+          style={acao === "reagendar" ? { borderColor: "#F5A524", background: "#FFF8EC", color: "#B06B00" } : { borderColor: "#D7DCE3", color: "#667085" }}
+        >
+          <RefreshCw size={14} /> Reagendar
+        </button>
+      </div>
+
+      {acao === "reagendar" && (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Nova data *">
+            <input type="date" value={novaData} onChange={e => setNovaData(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+          <Field label="Novo horário *">
+            <input type="time" value={novaHora} onChange={e => setNovaHora(e.target.value)} className={inputCls} style={inputStyle} />
+          </Field>
+        </div>
+      )}
+
+      {historico.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide mb-1.5" style={{ color: "#98A2B3" }}>Histórico</div>
+          <div className="flex flex-col gap-1.5 max-h-32 overflow-auto">
+            {historico.map((h, i) => (
+              <div key={i} className="text-xs rounded-md px-2.5 py-1.5" style={{ background: "#F9FAFB", color: "#475467" }}>
+                <div style={{ color: "#98A2B3" }}>{h.quando} · {h.acao === "reagendar" ? "Reagendada" : "Encerrada"}</div>
+                {h.texto}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </ModalShell>
   );
 }

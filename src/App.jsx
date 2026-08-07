@@ -27,6 +27,7 @@ const DEFAULT_STAGES = [
 ];
 
 const ACTIVITY_TYPES = ["Ligação", "Reunião", "E-mail", "Tarefa"];
+const SITUACOES_CLIENTE = ["Revenda", "Cliente Final", "Cliente Software", "Cliente Corporativo"];
 
 function seedData() {
   const v1 = uid("v"); const v2 = uid("v");
@@ -39,10 +40,10 @@ function seedData() {
       { id: v2, nome: "Camila Rocha", email: "camila@empresa.com" },
     ],
     clients: [
-      { id: c1, nome: "João Martins", empresa: "Grupo Martins Ltda", telefone: "(41) 99811-2233", email: "joao@martins.com", vendedoraId: v1 },
-      { id: c2, nome: "Patrícia Lima", empresa: "Lima Contabilidade", telefone: "(41) 99022-1188", email: "patricia@limacont.com", vendedoraId: v1 },
-      { id: c3, nome: "Roberto Alves", empresa: "Alves Distribuidora", telefone: "(41) 98877-4455", email: "roberto@alvesdist.com", vendedoraId: v2 },
-      { id: c4, nome: "Beatriz Nunes", empresa: "Nunes Engenharia", telefone: "(41) 99344-7766", email: "beatriz@nunesengenharia.com", vendedoraId: null },
+      { id: c1, nome: "João Martins", empresa: "Grupo Martins Ltda", telefone: "(41) 99811-2233", email: "joao@martins.com", cidade: "Curitiba", estado: "PR", situacao: "Revenda", vendedoraId: v1 },
+      { id: c2, nome: "Patrícia Lima", empresa: "Lima Contabilidade", telefone: "(41) 99022-1188", email: "patricia@limacont.com", cidade: "Curitiba", estado: "PR", situacao: "Cliente Final", vendedoraId: v1 },
+      { id: c3, nome: "Roberto Alves", empresa: "Alves Distribuidora", telefone: "(41) 98877-4455", email: "roberto@alvesdist.com", cidade: "Londrina", estado: "PR", situacao: "Revenda", vendedoraId: v2 },
+      { id: c4, nome: "Beatriz Nunes", empresa: "Nunes Engenharia", telefone: "(41) 99344-7766", email: "beatriz@nunesengenharia.com", cidade: "Maringá", estado: "PR", situacao: "Cliente Corporativo", vendedoraId: null },
     ],
     deals: [
       { id: d1, clientId: c1, titulo: "Plano anual - Martins Ltda", valor: 18000, etapa: "proposta", vendedoraId: v1, criadoEm: todayStr() },
@@ -873,15 +874,17 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
   const [filtroVendedora, setFiltroVendedora] = useState("");
   const [filtroEtapa, setFiltroEtapa] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
+  const [filtroSituacao, setFiltroSituacao] = useState("");
 
   const dealByClientId = (id) => deals.find(d => d.clientId === id);
 
   const estadosDisponiveis = Array.from(new Set(clients.map(c => c.estado).filter(Boolean))).sort();
 
   const filtered = clients.filter(c => {
-    if (!(c.nome + c.empresa).toLowerCase().includes(q.toLowerCase())) return false;
+    if (!(c.nome + c.empresa + (c.cidade || "")).toLowerCase().includes(q.toLowerCase())) return false;
     if (filtroVendedora && c.vendedoraId !== filtroVendedora) return false;
     if (filtroEstado && c.estado !== filtroEstado) return false;
+    if (filtroSituacao && c.situacao !== filtroSituacao) return false;
     if (filtroEtapa) {
       const deal = dealByClientId(c.id);
       if (!deal || deal.etapa !== filtroEtapa) return false;
@@ -924,9 +927,13 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
           <option value="">Todos os estados</option>
           {estadosDisponiveis.map(uf => <option key={uf} value={uf}>{uf}</option>)}
         </select>
-        {(filtroVendedora || filtroEtapa || filtroEstado || q) && (
+        <select value={filtroSituacao} onChange={e => setFiltroSituacao(e.target.value)} className={selectCls} style={selectStyle}>
+          <option value="">Todas as situações</option>
+          {SITUACOES_CLIENTE.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {(filtroVendedora || filtroEtapa || filtroEstado || filtroSituacao || q) && (
           <button
-            onClick={() => { setQ(""); setFiltroVendedora(""); setFiltroEtapa(""); setFiltroEstado(""); }}
+            onClick={() => { setQ(""); setFiltroVendedora(""); setFiltroEtapa(""); setFiltroEstado(""); setFiltroSituacao(""); }}
             className="text-xs font-medium"
             style={{ color: "#667085" }}
           >
@@ -967,18 +974,18 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                 </th>
               )}
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Cliente</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Empresa</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>UF</th>
+              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Razão Social</th>
               <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Contato</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Etapa</th>
+              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Telefone</th>
+              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>E-mail</th>
+              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Cidade</th>
+              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>UF</th>
+              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Situação</th>
               {isAdmin && <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Vendedora</th>}
             </tr>
           </thead>
           <tbody>
             {filtered.map(c => {
-              const deal = deals.find(d => d.clientId === c.id);
-              const stage = deal ? stageById(deal.etapa) : null;
               const vend = vendedoraById(c.vendedoraId);
               return (
                 <tr key={c.id} className="border-t" style={{ borderColor: "#F0F1F3" }}>
@@ -987,15 +994,18 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                       <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} />
                     </td>
                   )}
-                  <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}><Link to={`/clientes/${c.id}`} className="hover:underline" style={{ color: "#172433" }}>{c.nome}</Link></td>
-                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.empresa}</td>
-                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.estado || "—"}</td>
+                  <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}><Link to={`/clientes/${c.id}`} className="hover:underline" style={{ color: "#172433" }}>{c.empresa || "—"}</Link></td>
+                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.nome}</td>
                   <td className="px-4 py-2.5" style={{ color: "#475467" }}>
-                    <div className="flex items-center gap-1"><Phone size={11} /> {c.telefone}</div>
-                    <div className="flex items-center gap-1 mt-0.5"><Mail size={11} /> {c.email}</div>
+                    {c.telefone ? <div className="flex items-center gap-1"><Phone size={11} /> {c.telefone}</div> : <span style={{ color: "#B4BCC6" }}>—</span>}
                   </td>
+                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>
+                    {c.email ? <div className="flex items-center gap-1"><Mail size={11} /> {c.email}</div> : <span style={{ color: "#B4BCC6" }}>—</span>}
+                  </td>
+                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.cidade || "—"}</td>
+                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.estado || "—"}</td>
                   <td className="px-4 py-2.5">
-                    {stage ? <span className="text-xs font-medium rounded-full px-2 py-0.5" style={{ background: stage.won ? "#E7F9F1" : stage.closed ? "#FDEDEE" : "#EEF1F4", color: stage.won ? "#17A868" : stage.closed ? "#E5484D" : "#344054" }}>{stage.nome}</span> : <span className="text-xs" style={{ color: "#B4BCC6" }}>—</span>}
+                    {c.situacao ? <span className="text-xs font-medium rounded-full px-2 py-0.5" style={{ background: "#EEF1F4", color: "#344054" }}>{c.situacao}</span> : <span className="text-xs" style={{ color: "#B4BCC6" }}>—</span>}
                   </td>
                   {isAdmin && (
                     <td className="px-4 py-2.5">
@@ -1014,7 +1024,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={isAdmin ? 7 : 5} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
+              <tr><td colSpan={isAdmin ? 9 : 7} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
             )}
           </tbody>
         </table>
@@ -1156,10 +1166,12 @@ function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }
     parseFile(file, (rows) => {
       const parsed = rows.map(r => ({
         nome: pick(r, ["nome", "name", "cliente", "revenda"]),
-        empresa: pick(r, ["empresa", "company", "revenda", "fantasia"]),
+        empresa: pick(r, ["empresa", "company", "revenda", "fantasia", "razao"]),
         telefone: pick(r, ["telefone", "phone", "fone", "celular"]),
         email: pick(r, ["email", "e-mail"]),
+        cidade: pick(r, ["cidade", "city"]),
         estado: pick(r, ["estado", "uf"]).toUpperCase().slice(0, 2),
+        situacao: pick(r, ["situacao", "situação", "tipo", "classificacao"]) || SITUACOES_CLIENTE[0],
       })).filter(r => r.nome);
       setClientPreview(parsed);
     });
@@ -1524,25 +1536,35 @@ function ClientModal({ isAdmin, currentUser, vendedoras, onClose, onSave }) {
   const [empresa, setEmpresa] = useState("");
   const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
+  const [cidade, setCidade] = useState("");
   const [estado, setEstado] = useState("");
+  const [situacao, setSituacao] = useState(SITUACOES_CLIENTE[0]);
   const [vendedoraId, setVendedoraId] = useState(isAdmin ? "" : currentUser.id);
   const [error, setError] = useState("");
 
   const submit = () => {
     if (!nome.trim()) { setError("Informe ao menos o nome do cliente."); return; }
-    onSave({ nome: nome.trim(), empresa: empresa.trim(), telefone: telefone.trim(), email: email.trim(), estado: estado.trim().toUpperCase(), vendedoraId: vendedoraId || null });
+    onSave({ nome: nome.trim(), empresa: empresa.trim(), telefone: telefone.trim(), email: email.trim(), cidade: cidade.trim(), estado: estado.trim().toUpperCase(), situacao, vendedoraId: vendedoraId || null });
   };
 
   return (
     <ModalShell title="Novo cliente" onClose={onClose} onSubmit={submit}>
       {error && <div className="text-xs rounded-md px-2.5 py-1.5" style={{ background: "#FDEDEE", color: "#E5484D" }}>{error}</div>}
-      <Field label="Nome"><input value={nome} onChange={e => setNome(e.target.value)} className={inputCls} style={inputStyle} /></Field>
-      <Field label="Empresa"><input value={empresa} onChange={e => setEmpresa(e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="Razão Social"><input value={empresa} onChange={e => setEmpresa(e.target.value)} className={inputCls} style={inputStyle} /></Field>
+      <Field label="Contato (nome da pessoa)"><input value={nome} onChange={e => setNome(e.target.value)} className={inputCls} style={inputStyle} /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Telefone"><input value={telefone} onChange={e => setTelefone(e.target.value)} className={inputCls} style={inputStyle} /></Field>
         <Field label="E-mail"><input value={email} onChange={e => setEmail(e.target.value)} className={inputCls} style={inputStyle} /></Field>
       </div>
-      <Field label="Estado (UF)"><input value={estado} onChange={e => setEstado(e.target.value)} maxLength={2} className={inputCls} style={{ ...inputStyle, width: 80, textTransform: "uppercase" }} placeholder="SP" /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Cidade"><input value={cidade} onChange={e => setCidade(e.target.value)} className={inputCls} style={inputStyle} /></Field>
+        <Field label="Estado (UF)"><input value={estado} onChange={e => setEstado(e.target.value)} maxLength={2} className={inputCls} style={{ ...inputStyle, textTransform: "uppercase" }} placeholder="SP" /></Field>
+      </div>
+      <Field label="Situação">
+        <select value={situacao} onChange={e => setSituacao(e.target.value)} className={inputCls} style={inputStyle}>
+          {SITUACOES_CLIENTE.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </Field>
       {isAdmin && (
         <Field label="Vendedora responsável (opcional)">
           <select value={vendedoraId} onChange={e => setVendedoraId(e.target.value)} className={inputCls} style={inputStyle}>

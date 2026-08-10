@@ -922,6 +922,8 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
   const [filtroEstado, setFiltroEstado] = useState("");
   const [filtroSituacao, setFiltroSituacao] = useState("");
   const [colunasAbertas, setColunasAbertas] = useState(false);
+  const [ordenarPor, setOrdenarPor] = useState(null);
+  const [ordenarDirecao, setOrdenarDirecao] = useState("asc");
 
   const { ordem: ordemColunas, mover: moverColuna, resetar: resetarColunas } = useColunasClientes(currentUser, isAdmin);
 
@@ -941,6 +943,29 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
     return true;
   });
 
+  const valorParaOrdenar = (c, key) => {
+    if (key === "vendedora") return (vendedoraById(c.vendedoraId)?.nome || "").toLowerCase();
+    return String(c[key] || "").toLowerCase();
+  };
+
+  const sorted = ordenarPor
+    ? [...filtered].sort((a, b) => {
+        const va = valorParaOrdenar(a, ordenarPor);
+        const vb = valorParaOrdenar(b, ordenarPor);
+        const cmp = va.localeCompare(vb, "pt-BR");
+        return ordenarDirecao === "asc" ? cmp : -cmp;
+      })
+    : filtered;
+
+  const alternarOrdenacao = (key) => {
+    if (ordenarPor === key) {
+      setOrdenarDirecao(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setOrdenarPor(key);
+      setOrdenarDirecao("asc");
+    }
+  };
+
   const allSelected = filtered.length > 0 && filtered.every(c => selected.includes(c.id));
   const toggleAll = () => setSelected(allSelected ? [] : filtered.map(c => c.id));
   const toggleOne = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -957,7 +982,20 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
 
   const renderHeader = (key) => {
     const def = COLUNAS_CLIENTES_DEF.find(c => c.key === key);
-    return <th key={key} className="text-left px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: "#667085" }}>{def?.label}</th>;
+    const ativo = ordenarPor === key;
+    return (
+      <th key={key} className="text-left px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: "#667085" }}>
+        <button
+          onClick={() => alternarOrdenacao(key)}
+          className="flex items-center gap-1"
+          style={{ color: ativo ? "#172433" : "#667085", fontWeight: ativo ? 700 : 500 }}
+          title="Ordenar por esta coluna"
+        >
+          {def?.label}
+          <span style={{ fontSize: 10, opacity: ativo ? 1 : 0.35 }}>{ativo && ordenarDirecao === "desc" ? "▼" : "▲"}</span>
+        </button>
+      </th>
+    );
   };
 
   const renderCell = (c, key, vend) => {
@@ -1112,7 +1150,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
             </tr>
           </thead>
           <tbody>
-            {filtered.map(c => {
+            {sorted.map(c => {
               const vend = vendedoraById(c.vendedoraId);
               return (
                 <tr key={c.id} className="border-t" style={{ borderColor: "#F0F1F3" }}>
@@ -1125,7 +1163,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                 </tr>
               );
             })}
-            {filtered.length === 0 && (
+            {sorted.length === 0 && (
               <tr><td colSpan={isAdmin ? 9 : 7} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
             )}
           </tbody>

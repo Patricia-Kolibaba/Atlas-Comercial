@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { supabase } from "./supabaseClient";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, Phone, Mail, Building2, User, MapPin, Calendar, Clock,
@@ -420,18 +421,62 @@ function TabWhatsApp({ client }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // TAB: ARQUIVOS
 // ══════════════════════════════════════════════════════════════════════════════
-function TabArquivos({ arquivos, onAdd }) {
+function TabArquivos({ arquivos, onAdd, clientId }) {
   const [show, setShow] = useState(false);
-  const [form, setForm] = useState({ nome: "", categoria: "Contrato", url: "", observacao: "" });
+  const [nome, setNome] = useState("");
+  const [categoria, setCategoria] = useState("Contrato");
+  const [observacao, setObservacao] = useState("");
+  const [arquivoSelecionado, setArquivoSelecionado] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
 
   const categorias = ["Contrato", "Proposta", "NF / Boleto", "Foto", "Planilha", "Outro"];
 
-  function submit(e) {
+  function escolherArquivo(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setArquivoSelecionado(file);
+    if (!nome) setNome(file.name);
+  }
+
+  async function submit(e) {
     e.preventDefault();
-    if (!form.nome.trim()) return;
-    onAdd({ ...form, criadoEm: new Date().toISOString() });
-    setForm({ nome: "", categoria: "Contrato", url: "", observacao: "" });
-    setShow(false);
+    setErro("");
+    if (!arquivoSelecionado) { setErro("Escolha um arquivo antes de salvar."); return; }
+    if (!nome.trim()) { setErro("Dê um nome para o arquivo."); return; }
+
+    setEnviando(true);
+    try {
+      const extensao = arquivoSelecionado.name.split(".").pop();
+      const caminhoNoStorage = `${clientId}/${Date.now()}_${arquivoSelecionado.name}`;
+
+      const { error: erroUpload } = await supabase
+        .storage
+        .from("arquivos-clientes")
+        .upload(caminhoNoStorage, arquivoSelecionado);
+
+      if (erroUpload) { setErro("Não foi possível enviar o arquivo: " + erroUpload.message); setEnviando(false); return; }
+
+      const { data: urlData } = supabase
+        .storage
+        .from("arquivos-clientes")
+        .getPublicUrl(caminhoNoStorage);
+
+      onAdd({
+        nome: nome.trim(),
+        categoria,
+        observacao,
+        url: urlData.publicUrl,
+        tipoArquivo: extensao,
+      });
+
+      setNome(""); setCategoria("Contrato"); setObservacao("");
+      setArquivoSelecionado(null);
+      setShow(false);
+    } catch (err) {
+      setErro("Erro inesperado ao enviar o arquivo.");
+    }
+    setEnviando(false);
   }
 
   const iconForCat = (cat = "") => {
@@ -462,33 +507,49 @@ function TabArquivos({ arquivos, onAdd }) {
 
       {show && (
         <form onSubmit={submit} className="mb-4 rounded-xl border p-4 flex flex-col gap-3" style={{ borderColor: C.green, background: "#F0FDF9" }}>
+          {erro && (
+            <div className="text-xs rounded-md px-2.5 py-1.5" style={{ background: "#FDEDEE", color: "#E5484D" }}>{erro}</div>
+          )}
+
+          <div>
+            <label className="text-xs font-medium block mb-1" style={{ color: C.secondary }}>Arquivo *</label>
+            <label className="flex items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 text-sm cursor-pointer"
+              style={{ borderColor: C.border, color: C.secondary, background: C.white }}>
+              <Paperclip size={16} />
+              {arquivoSelecionado ? arquivoSelecionado.name : "Clique para escolher um arquivo (PDF, JPG, PNG, ODT...)"}
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.odt,.ods,.odp"
+                onChange={escolherArquivo}
+                className="hidden"
+              />
+            </label>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-medium block mb-1" style={{ color: C.secondary }}>Nome *</label>
-              <input value={form.nome} onChange={e => setForm(f => ({ ...f, nome: e.target.value }))}
+              <input value={nome} onChange={e => setNome(e.target.value)}
                 className="w-full text-sm border rounded-lg px-2 py-1.5" style={{ borderColor: C.border }} required />
             </div>
             <div>
               <label className="text-xs font-medium block mb-1" style={{ color: C.secondary }}>Categoria</label>
-              <select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))}
+              <select value={categoria} onChange={e => setCategoria(e.target.value)}
                 className="w-full text-sm border rounded-lg px-2 py-1.5" style={{ borderColor: C.border }}>
                 {categorias.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label className="text-xs font-medium block mb-1" style={{ color: C.secondary }}>Link (URL)</label>
-            <input type="url" placeholder="https://..." value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))}
-              className="w-full text-sm border rounded-lg px-2 py-1.5" style={{ borderColor: C.border }} />
-          </div>
-          <div>
             <label className="text-xs font-medium block mb-1" style={{ color: C.secondary }}>Observação</label>
-            <input value={form.observacao} onChange={e => setForm(f => ({ ...f, observacao: e.target.value }))}
+            <input value={observacao} onChange={e => setObservacao(e.target.value)}
               className="w-full text-sm border rounded-lg px-2 py-1.5" style={{ borderColor: C.border }} />
           </div>
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={() => setShow(false)} className="text-xs px-3 py-1.5 rounded-lg border" style={{ borderColor: C.border, color: C.secondary }}>Cancelar</button>
-            <button type="submit" className="text-xs px-3 py-1.5 rounded-lg font-medium" style={{ background: C.green, color: C.white }}>Salvar</button>
+            <button type="submit" disabled={enviando} className="text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-60" style={{ background: C.green, color: C.white }}>
+              {enviando ? "Enviando..." : "Salvar"}
+            </button>
           </div>
         </form>
       )}
@@ -1289,8 +1350,8 @@ export default function ClientePage({
               {abaAtiva === "whatsapp" && (
                 <TabWhatsApp client={client} />
               )}
-              {abaAtiva === "arquivos" && (
-                <TabArquivos arquivos={clientArquivos} onAdd={addArquivo} />
+             {abaAtiva === "arquivos" && (
+                <TabArquivos arquivos={clientArquivos} onAdd={addArquivo} clientId={clienteId} />
               )}
               {abaAtiva === "financeiro" && (
                 <TabFinanceiro client={client} onSave={updateClient} />

@@ -28,6 +28,16 @@ const DEFAULT_STAGES = [
 
 const ACTIVITY_TYPES = ["Ligação", "Reunião", "E-mail", "Tarefa"];
 const SITUACOES_CLIENTE = ["Revenda", "Cliente Final", "Cliente Software", "Cliente Corporativo"];
+const COLUNAS_CLIENTES_DEF = [
+  { key: "empresa", label: "Razão Social" },
+  { key: "nome", label: "Contato" },
+  { key: "telefone", label: "Telefone" },
+  { key: "email", label: "E-mail" },
+  { key: "cidade", label: "Cidade" },
+  { key: "estado", label: "UF" },
+  { key: "situacao", label: "Situação" },
+  { key: "vendedora", label: "Vendedora", adminOnly: true },
+];
 
 function seedData() {
   const v1 = uid("v"); const v2 = uid("v");
@@ -505,7 +515,7 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
               } />
               <Route path="/clientes" element={
                 <ClientesView
-                  clients={scopedClients} isAdmin={isAdmin} vendedoraById={vendedoraById}
+                  clients={scopedClients} isAdmin={isAdmin} vendedoraById={vendedoraById} currentUser={currentUser}
                   deals={db.deals} stages={db.stages} stageById={stageById}
                   onNewClient={() => setShowClientModal(true)}
                   vendedoras={db.vendedoras} assignClient={assignClient}
@@ -867,7 +877,43 @@ function PipelineView({ db, scopedDeals, isAdmin, clientById, vendedoraById, upd
   );
 }
 
-function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients }) {
+function useColunasClientes(currentUser, isAdmin) {
+  const storageKey = `colunas_clientes_${currentUser?.id || "geral"}`;
+  const colunasPossiveis = COLUNAS_CLIENTES_DEF.filter(c => !c.adminOnly || isAdmin).map(c => c.key);
+
+  const [ordem, setOrdem] = useState(() => {
+    try {
+      const salvo = JSON.parse(localStorage.getItem(storageKey) || "null");
+      if (Array.isArray(salvo)) {
+        const validas = salvo.filter(k => colunasPossiveis.includes(k));
+        const faltando = colunasPossiveis.filter(k => !validas.includes(k));
+        return [...validas, ...faltando];
+      }
+    } catch (e) { /* localStorage indisponível ou valor inválido — usa padrão */ }
+    return colunasPossiveis;
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, JSON.stringify(ordem)); } catch (e) { /* segue sem salvar */ }
+  }, [ordem, storageKey]);
+
+  const mover = (key, direcao) => {
+    setOrdem(prev => {
+      const i = prev.indexOf(key);
+      const j = i + direcao;
+      if (j < 0 || j >= prev.length) return prev;
+      const nova = [...prev];
+      [nova[i], nova[j]] = [nova[j], nova[i]];
+      return nova;
+    });
+  };
+
+  const resetar = () => setOrdem(colunasPossiveis);
+
+  return { ordem, mover, resetar };
+}
+
+function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients, currentUser }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState([]);
   const [bulkVendedoraId, setBulkVendedoraId] = useState("");
@@ -875,6 +921,9 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
   const [filtroEtapa, setFiltroEtapa] = useState("");
   const [filtroEstado, setFiltroEstado] = useState("");
   const [filtroSituacao, setFiltroSituacao] = useState("");
+  const [colunasAbertas, setColunasAbertas] = useState(false);
+
+  const { ordem: ordemColunas, mover: moverColuna, resetar: resetarColunas } = useColunasClientes(currentUser, isAdmin);
 
   const dealByClientId = (id) => deals.find(d => d.clientId === id);
 
@@ -905,6 +954,46 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
 
   const selectCls = "text-sm rounded-lg border px-2.5 py-2";
   const selectStyle = { borderColor: "#D7DCE3", color: "#344054" };
+
+  const renderHeader = (key) => {
+    const def = COLUNAS_CLIENTES_DEF.find(c => c.key === key);
+    return <th key={key} className="text-left px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: "#667085" }}>{def?.label}</th>;
+  };
+
+  const renderCell = (c, key, vend) => {
+    switch (key) {
+      case "empresa":
+        return <td key={key} className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}><Link to={`/clientes/${c.id}`} className="hover:underline" style={{ color: "#172433" }}>{c.empresa || "—"}</Link></td>;
+      case "nome":
+        return <td key={key} className="px-4 py-2.5" style={{ color: "#475467" }}>{c.nome}</td>;
+      case "telefone":
+        return <td key={key} className="px-4 py-2.5" style={{ color: "#475467" }}>{c.telefone ? <div className="flex items-center gap-1"><Phone size={11} /> {c.telefone}</div> : <span style={{ color: "#B4BCC6" }}>—</span>}</td>;
+      case "email":
+        return <td key={key} className="px-4 py-2.5" style={{ color: "#475467" }}>{c.email ? <div className="flex items-center gap-1"><Mail size={11} /> {c.email}</div> : <span style={{ color: "#B4BCC6" }}>—</span>}</td>;
+      case "cidade":
+        return <td key={key} className="px-4 py-2.5" style={{ color: "#475467" }}>{c.cidade || "—"}</td>;
+      case "estado":
+        return <td key={key} className="px-4 py-2.5" style={{ color: "#475467" }}>{c.estado || "—"}</td>;
+      case "situacao":
+        return <td key={key} className="px-4 py-2.5">{c.situacao ? <span className="text-xs font-medium rounded-full px-2 py-0.5" style={{ background: "#EEF1F4", color: "#344054" }}>{c.situacao}</span> : <span className="text-xs" style={{ color: "#B4BCC6" }}>—</span>}</td>;
+      case "vendedora":
+        return (
+          <td key={key} className="px-4 py-2.5">
+            <select
+              value={c.vendedoraId || ""}
+              onChange={(e) => assignClient(c.id, e.target.value || null, true)}
+              className="text-sm rounded-md border px-2 py-1"
+              style={{ borderColor: "#D7DCE3", color: vend ? "#344054" : "#B4BCC6" }}
+            >
+              <option value="">Não atribuído</option>
+              {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+            </select>
+          </td>
+        );
+      default:
+        return <td key={key} className="px-4 py-2.5" />;
+    }
+  };
 
   return (
     <div>
@@ -940,9 +1029,54 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
             Limpar filtros
           </button>
         )}
-        <button onClick={onNewClient} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white ml-auto" style={{ background: "#1FBE7A" }}>
-          <Plus size={14} /> Novo cliente
-        </button>
+        <div className="relative ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setColunasAbertas(v => !v)}
+            className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium"
+            style={{ borderColor: "#D7DCE3", color: "#344054" }}
+          >
+            <Sliders size={14} /> Colunas
+          </button>
+          <button onClick={onNewClient} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-white" style={{ background: "#1FBE7A" }}>
+            <Plus size={14} /> Novo cliente
+          </button>
+
+          {colunasAbertas && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setColunasAbertas(false)} />
+              <div className="absolute right-0 top-11 z-20 w-64 rounded-xl border bg-white shadow-lg p-3" style={{ borderColor: "#E4E7EC" }}>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "#98A2B3" }}>Ordem das colunas</div>
+                <div className="flex flex-col gap-1">
+                  {ordemColunas.map((key, i) => {
+                    const def = COLUNAS_CLIENTES_DEF.find(c => c.key === key);
+                    return (
+                      <div key={key} className="flex items-center justify-between gap-2 rounded-md px-2 py-1.5" style={{ background: "#F9FAFB" }}>
+                        <span className="text-sm" style={{ color: "#344054" }}>{def?.label}</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            disabled={i === 0}
+                            onClick={() => moverColuna(key, -1)}
+                            className="w-6 h-6 flex items-center justify-center rounded"
+                            style={{ color: i === 0 ? "#D7DCE3" : "#475467" }}
+                          >▲</button>
+                          <button
+                            disabled={i === ordemColunas.length - 1}
+                            onClick={() => moverColuna(key, 1)}
+                            className="w-6 h-6 flex items-center justify-center rounded"
+                            style={{ color: i === ordemColunas.length - 1 ? "#D7DCE3" : "#475467" }}
+                          >▼</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button onClick={resetarColunas} className="text-xs font-medium mt-2" style={{ color: "#667085" }}>
+                  Restaurar ordem padrão
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {isAdmin && selected.length > 0 && (
@@ -965,7 +1099,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
           </button>
         </div>
       )}
-      <div className="rounded-xl border overflow-hidden bg-white" style={{ borderColor: "#E4E7EC" }}>
+      <div className="rounded-xl border overflow-hidden bg-white" style={{ borderColor: "#E4E7EC", overflowX: "auto" }}>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ background: "#F9FAFB" }}>
@@ -974,14 +1108,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                 </th>
               )}
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Razão Social</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Contato</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Telefone</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>E-mail</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Cidade</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>UF</th>
-              <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Situação</th>
-              {isAdmin && <th className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>Vendedora</th>}
+              {ordemColunas.map(renderHeader)}
             </tr>
           </thead>
           <tbody>
@@ -994,32 +1121,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                       <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} />
                     </td>
                   )}
-                  <td className="px-4 py-2.5 font-medium" style={{ color: "#172433" }}><Link to={`/clientes/${c.id}`} className="hover:underline" style={{ color: "#172433" }}>{c.empresa || "—"}</Link></td>
-                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.nome}</td>
-                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>
-                    {c.telefone ? <div className="flex items-center gap-1"><Phone size={11} /> {c.telefone}</div> : <span style={{ color: "#B4BCC6" }}>—</span>}
-                  </td>
-                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>
-                    {c.email ? <div className="flex items-center gap-1"><Mail size={11} /> {c.email}</div> : <span style={{ color: "#B4BCC6" }}>—</span>}
-                  </td>
-                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.cidade || "—"}</td>
-                  <td className="px-4 py-2.5" style={{ color: "#475467" }}>{c.estado || "—"}</td>
-                  <td className="px-4 py-2.5">
-                    {c.situacao ? <span className="text-xs font-medium rounded-full px-2 py-0.5" style={{ background: "#EEF1F4", color: "#344054" }}>{c.situacao}</span> : <span className="text-xs" style={{ color: "#B4BCC6" }}>—</span>}
-                  </td>
-                  {isAdmin && (
-                    <td className="px-4 py-2.5">
-                      <select
-                        value={c.vendedoraId || ""}
-                        onChange={(e) => assignClient(c.id, e.target.value || null, true)}
-                        className="text-sm rounded-md border px-2 py-1"
-                        style={{ borderColor: "#D7DCE3", color: vend ? "#344054" : "#B4BCC6" }}
-                      >
-                        <option value="">Não atribuído</option>
-                        {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
-                      </select>
-                    </td>
-                  )}
+                  {ordemColunas.map(key => renderCell(c, key, vend))}
                 </tr>
               );
             })}

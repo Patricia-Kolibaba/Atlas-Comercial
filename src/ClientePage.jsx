@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { supabase } from "./supabaseClient";
 import { useParams, useNavigate } from "react-router-dom";
+import { supabase } from "./supabaseClient";
 import {
   ArrowLeft, Phone, Mail, Building2, User, MapPin, Calendar, Clock,
   CheckCircle2, Edit2, Save, Trash2, Plus, FileText, DollarSign,
@@ -1350,7 +1350,7 @@ export default function ClientePage({
               {abaAtiva === "whatsapp" && (
                 <TabWhatsApp client={client} />
               )}
-             {abaAtiva === "arquivos" && (
+              {abaAtiva === "arquivos" && (
                 <TabArquivos arquivos={clientArquivos} onAdd={addArquivo} clientId={clienteId} />
               )}
               {abaAtiva === "financeiro" && (

@@ -1300,7 +1300,7 @@ function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }
       setVendPreview(parsed);
     });
   };
-
+  
   const handleClientFile = (e) => {
     const file = e.target.files[0]; if (!file) return;
     parseFile(file, (rows) => {

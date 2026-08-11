@@ -29,12 +29,23 @@ const DEFAULT_STAGES = [
 const ACTIVITY_TYPES = ["Ligação", "Reunião", "E-mail", "Tarefa"];
 const SITUACOES_CLIENTE = ["Revenda", "Cliente Final", "Cliente Software", "Cliente Corporativo"];
 const COLUNAS_CLIENTES_DEF = [
-  { key: "empresa", label: "Razão Social" },
-  { key: "nome", label: "Contato" },
+  { key: "empresa", label: "Empresa" },
+  { key: "nome", label: "Nome Completo" },
+  { key: "cnpj", label: "CNPJ" },
+  { key: "cargo", label: "Cargo" },
+  { key: "segmento", label: "Segmento" },
   { key: "telefone", label: "Telefone" },
-  { key: "email", label: "E-mail" },
+  { key: "whatsapp", label: "WhatsApp" },
+  { key: "email", label: "E-mail principal" },
+  { key: "emailsAdicionais", label: "E-mails adicionais" },
+  { key: "site", label: "Site" },
+  { key: "cep", label: "CEP" },
+  { key: "estado", label: "Estado" },
   { key: "cidade", label: "Cidade" },
-  { key: "estado", label: "UF" },
+  { key: "bairro", label: "Bairro" },
+  { key: "rua", label: "Rua" },
+  { key: "numero", label: "Número" },
+  { key: "complemento", label: "Complemento" },
   { key: "situacao", label: "Situação" },
   { key: "vendedora", label: "Vendedora", adminOnly: true },
 ];
@@ -1029,7 +1040,8 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
           </td>
         );
       default:
-        return <td key={key} className="px-4 py-2.5" />;
+        // colunas simples de texto (cnpj, cargo, segmento, whatsapp, emailsAdicionais, site, cep, bairro, rua, numero, complemento)
+        return <td key={key} className="px-4 py-2.5" style={{ color: "#475467" }}>{c[key] || <span style={{ color: "#B4BCC6" }}>—</span>}</td>;
     }
   };
 
@@ -1278,9 +1290,24 @@ function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }
   const [vendPreview, setVendPreview] = useState(null);
   const [clientPreview, setClientPreview] = useState(null);
 
-  const pick = (row, keys) => {
-    const foundKey = Object.keys(row).find(k => keys.some(kw => k.toLowerCase().includes(kw)));
-    return foundKey ? String(row[foundKey] || "").trim() : "";
+  // remove acentos e deixa em minúsculo, pra "Endereço", "ENDERECO", "endereço " serem todos iguais
+  const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  // acha a 1ª coluna da planilha cujo nome bate com alguma palavra-chave (e não bate com nenhuma palavra proibida)
+  const pick = (row, keys, excludeWords = []) => {
+    const foundKey = Object.keys(row).find(k => {
+      const nk = norm(k);
+      return keys.some(kw => nk.includes(kw)) && !excludeWords.some(ex => nk.includes(ex));
+    });
+    return foundKey ? String(row[foundKey] ?? "").trim() : "";
+  };
+
+  // pega TODAS as colunas que baterem com as palavras-chave (usado pros e-mails adicionais)
+  const pickAll = (row, keys, excludeKey) => {
+    return Object.keys(row)
+      .filter(k => k !== excludeKey && keys.some(kw => norm(k).includes(kw)))
+      .map(k => String(row[k] ?? "").trim())
+      .filter(Boolean);
   };
 
   const parseFile = (file, onDone) => {
@@ -1304,15 +1331,39 @@ function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }
   const handleClientFile = (e) => {
     const file = e.target.files[0]; if (!file) return;
     parseFile(file, (rows) => {
-      const parsed = rows.map(r => ({
-        nome: pick(r, ["nome", "name", "cliente", "revenda"]),
-        empresa: pick(r, ["empresa", "company", "revenda", "fantasia", "razao"]),
-        telefone: pick(r, ["telefone", "phone", "fone", "celular"]),
-        email: pick(r, ["email", "e-mail"]),
-        cidade: pick(r, ["cidade", "city"]),
-        estado: pick(r, ["estado", "uf"]).toUpperCase().slice(0, 2),
-        situacao: pick(r, ["situacao", "situação", "tipo", "classificacao"]) || SITUACOES_CLIENTE[0],
-      })).filter(r => r.nome);
+      const parsed = rows.map(r => {
+        // e-mail principal = 1ª coluna de e-mail que NÃO seja marcada como adicional/secundária/2ª
+        const emailPrincipalKey = Object.keys(r).find(k => {
+          const nk = norm(k);
+          return nk.includes("email") && !["adicional", "secundari", "extra", "outro", "2", "3"].some(w => nk.includes(w));
+        });
+        const emailPrincipal = emailPrincipalKey ? String(r[emailPrincipalKey] ?? "").trim() : pick(r, ["email"]);
+        const emailsAdicionaisArr = Object.keys(r)
+          .filter(k => k !== emailPrincipalKey && norm(k).includes("email"))
+          .map(k => String(r[k] ?? "").trim())
+          .filter(Boolean);
+
+        return {
+          nome: pick(r, ["nome completo", "nome do cliente", "nome", "contato", "cliente"]),
+          empresa: pick(r, ["empresa", "razao social", "fantasia", "company"]),
+          cnpj: pick(r, ["cnpj"]),
+          cargo: pick(r, ["cargo", "funcao", "posicao", "position"]),
+          segmento: pick(r, ["segmento", "ramo", "setor", "area de atuacao"]),
+          telefone: pick(r, ["telefone", "fone", "celular", "phone"], ["whatsapp", "whats"]),
+          whatsapp: pick(r, ["whatsapp", "whats"]),
+          email: emailPrincipal,
+          emailsAdicionais: emailsAdicionaisArr.join(", "),
+          site: pick(r, ["site", "website", "homepage", " url"]),
+          cep: pick(r, ["cep", "codigo postal"]),
+          estado: pick(r, ["estado", "uf"]).toUpperCase().slice(0, 2),
+          cidade: pick(r, ["cidade", "municipio", "city"]),
+          bairro: pick(r, ["bairro", "neighborhood"]),
+          rua: pick(r, ["rua", "logradouro", "endereco", "address"], ["numero", "complemento"]),
+          numero: pick(r, ["numero", "num", "nº", "n°"]),
+          complemento: pick(r, ["complemento", "compl"]),
+          situacao: pick(r, ["situacao", "tipo", "classificacao"]) || SITUACOES_CLIENTE[0],
+        };
+      }).filter(r => r.nome);
       setClientPreview(parsed);
     });
   };
@@ -1373,11 +1424,11 @@ function ImportarView({ setDb, showToast, vendedoras, clients, deleteVendedora }
         />
         <Card
           title="Importar clientes"
-          hint="CSV com colunas: nome, empresa, telefone, email — depois distribua na aba Distribuir"
+          hint="CSV com: nome completo, empresa, CNPJ, cargo, segmento, telefone, WhatsApp, e-mail principal, e-mails adicionais, site, CEP, estado, cidade, bairro, rua, número, complemento — depois distribua na aba Distribuir"
           onFile={handleClientFile}
           preview={clientPreview}
           onConfirm={confirmClients}
-          columns={["nome", "empresa", "telefone", "email", "estado"]}
+          columns={["nome", "empresa", "cnpj", "telefone", "whatsapp", "email", "cidade", "estado"]}
         />
       </div>
 

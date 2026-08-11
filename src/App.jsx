@@ -483,6 +483,17 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
     showToast(`${nomeV} foi excluída.`);
   };
 
+  const deleteClient = (clientId) => {
+    const cliente = db.clients.find(c => c.id === clientId);
+    setDb(prev => ({
+      ...prev,
+      clients: prev.clients.filter(c => c.id !== clientId),
+      deals: prev.deals.filter(d => d.clientId !== clientId),
+      activities: prev.activities.filter(a => a.clientId !== clientId),
+    }));
+    showToast(`${cliente?.nome || "Cliente"} foi excluído.`);
+  };
+
   const pendingCount = scopedActivities.filter(a => !a.concluida && a.data <= todayStr()).length;
 
   return (
@@ -531,6 +542,7 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
                   onNewClient={() => setShowClientModal(true)}
                   vendedoras={db.vendedoras} assignClient={assignClient}
                   bulkAssignClients={bulkAssignClients}
+                  deleteClient={deleteClient}
                 />
               } />
               <Route path="/clientes/:clienteId" element={
@@ -924,7 +936,7 @@ function useColunasClientes(currentUser, isAdmin) {
   return { ordem, mover, resetar };
 }
 
-function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients, currentUser }) {
+function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageById, onNewClient, vendedoras, assignClient, bulkAssignClients, currentUser, deleteClient }) {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState([]);
   const [bulkVendedoraId, setBulkVendedoraId] = useState("");
@@ -935,6 +947,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
   const [colunasAbertas, setColunasAbertas] = useState(false);
   const [ordenarPor, setOrdenarPor] = useState(null);
   const [ordenarDirecao, setOrdenarDirecao] = useState("asc");
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(null); // id do cliente a confirmar
 
   const { ordem: ordemColunas, mover: moverColuna, resetar: resetarColunas } = useColunasClientes(currentUser, isAdmin);
 
@@ -1159,6 +1172,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                 </th>
               )}
               {ordemColunas.map(renderHeader)}
+              <th className="text-left px-4 py-2.5 w-10"></th>
             </tr>
           </thead>
           <tbody>
@@ -1172,11 +1186,43 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
                     </td>
                   )}
                   {ordemColunas.map(key => renderCell(c, key, vend))}
+                  <td className="px-4 py-2.5 text-right">
+                    {confirmandoExclusao === c.id ? (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="text-xs" style={{ color: "#E5484D" }}>Excluir?</span>
+                        <button
+                          onClick={() => { deleteClient(c.id); setConfirmandoExclusao(null); }}
+                          className="text-xs font-medium rounded-md px-2 py-1 text-white"
+                          style={{ background: "#E5484D" }}
+                        >
+                          Sim
+                        </button>
+                        <button
+                          onClick={() => setConfirmandoExclusao(null)}
+                          className="text-xs font-medium rounded-md px-2 py-1"
+                          style={{ color: "#667085", background: "#F5F6F8" }}
+                        >
+                          Não
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmandoExclusao(c.id)}
+                        title="Excluir cliente"
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-md"
+                        style={{ color: "#98A2B3" }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = "#E5484D"; e.currentTarget.style.background = "#FDEDEE"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = "#98A2B3"; e.currentTarget.style.background = "transparent"; }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {sorted.length === 0 && (
-              <tr><td colSpan={isAdmin ? 9 : 7} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
+              <tr><td colSpan={isAdmin ? 10 : 8} className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum cliente encontrado.</td></tr>
             )}
           </tbody>
         </table>

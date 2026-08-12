@@ -299,6 +299,215 @@ function EmConstrucao({ titulo }) {
   );
 }
 
+// ---------------- Dashboard (métricas, gráficos e KPIs) ----------------
+function KpiCard({ label, value, sub, color }) {
+  return (
+    <div className="rounded-xl border bg-white p-4" style={{ borderColor: "#E4E7EC" }}>
+      <div className="text-xs font-medium mb-1" style={{ color: "#98A2B3" }}>{label}</div>
+      <div className="text-2xl font-semibold" style={{ color: color || "#172433" }}>{value}</div>
+      {sub && <div className="text-xs mt-0.5" style={{ color: "#667085" }}>{sub}</div>}
+    </div>
+  );
+}
+
+function DashboardView({ clients, deals, activities, stages, vendedoraById, isAdmin }) {
+  const stageInfo = (etapaId) => stages.find(s => s.id === etapaId);
+  const abertos = deals.filter(d => !stageInfo(d.etapa)?.closed);
+  const ganhos = deals.filter(d => stageInfo(d.etapa)?.won);
+  const valorAbertos = abertos.reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const valorGanhos = ganhos.reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const pendentes = activities.filter(a => !a.concluida).length;
+  const atrasadas = activities.filter(a => !a.concluida && a.data <= todayStr()).length;
+
+  const porEtapa = stages.map(s => ({ nome: s.nome, count: deals.filter(d => d.etapa === s.id).length }));
+  const maxCount = Math.max(1, ...porEtapa.map(e => e.count));
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KpiCard label="Clientes" value={clients.length} />
+        <KpiCard label="Negócios em aberto" value={abertos.length} sub={brl(valorAbertos)} />
+        <KpiCard label="Negócios ganhos" value={ganhos.length} sub={brl(valorGanhos)} color="#1FBE7A" />
+        <KpiCard
+          label="Atividades pendentes"
+          value={pendentes}
+          sub={atrasadas ? `${atrasadas} atrasada(s)` : "em dia"}
+          color={atrasadas ? "#E5484D" : undefined}
+        />
+      </div>
+
+      <div className="rounded-xl border bg-white p-5" style={{ borderColor: "#E4E7EC" }}>
+        <div className="text-sm font-semibold mb-4" style={{ color: "#172433" }}>Negócios por etapa</div>
+        {porEtapa.every(e => e.count === 0) ? (
+          <div className="text-sm" style={{ color: "#98A2B3" }}>Nenhum negócio cadastrado ainda.</div>
+        ) : (
+          <div className="space-y-2.5">
+            {porEtapa.map(e => (
+              <div key={e.nome} className="flex items-center gap-3">
+                <div className="w-36 text-xs shrink-0 truncate" style={{ color: "#667085" }}>{e.nome}</div>
+                <div className="flex-1 h-5 rounded-md overflow-hidden" style={{ background: "#F0F1F3" }}>
+                  <div className="h-full rounded-md transition-all" style={{ width: `${(e.count / maxCount) * 100}%`, background: "#344054", minWidth: e.count ? 6 : 0 }} />
+                </div>
+                <div className="w-6 text-xs text-right" style={{ color: "#344054" }}>{e.count}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {isAdmin && (
+        <Link
+          to="/relatorios"
+          className="inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-4 py-2.5"
+          style={{ background: "#172433", color: "#fff" }}
+        >
+          <BarChart3 size={15} /> Ver relatórios completos
+        </Link>
+      )}
+    </div>
+  );
+}
+
+// ---------------- Relatórios (filtros + exportação) ----------------
+const TIPOS_RELATORIO = [
+  { key: "negocios_criados", label: "Negócios criados" },
+  { key: "negocios_ganhos", label: "Negócios ganhos" },
+  { key: "negocios_abertos", label: "Orçamentos / negócios em aberto" },
+  { key: "atividades", label: "Atividades" },
+];
+
+function RelatoriosView({ clients, deals, activities, stages, vendedoras, vendedoraById, clientById }) {
+  const [vendedoraId, setVendedoraId] = useState("");
+  const [tipo, setTipo] = useState(TIPOS_RELATORIO[0].key);
+
+  const stageInfo = (etapaId) => stages.find(s => s.id === etapaId);
+  const stageNome = (etapaId) => stageInfo(etapaId)?.nome || etapaId || "—";
+
+  const linhas = useMemo(() => {
+    if (tipo === "atividades") {
+      return activities
+        .filter(a => !vendedoraId || a.vendedoraId === vendedoraId)
+        .map(a => ({
+          Cliente: clientById(a.clientId)?.nome || "—",
+          Tipo: a.tipo || "—",
+          Data: a.data || "—",
+          Hora: a.hora || "—",
+          Situação: a.concluida ? "Concluída" : (a.data && a.data < todayStr() ? "Atrasada" : "Pendente"),
+          Vendedora: vendedoraById(a.vendedoraId)?.nome || "Não atribuído",
+        }));
+    }
+    let base = deals.filter(d => !vendedoraId || d.vendedoraId === vendedoraId);
+    if (tipo === "negocios_ganhos") base = base.filter(d => stageInfo(d.etapa)?.won);
+    if (tipo === "negocios_abertos") base = base.filter(d => !stageInfo(d.etapa)?.closed);
+    // "negocios_criados" mostra todos, sem filtro de etapa
+    return base.map(d => ({
+      Cliente: clientById(d.clientId)?.nome || "—",
+      "Título": d.titulo || "—",
+      Etapa: stageNome(d.etapa),
+      Valor: Number(d.valor) || 0,
+      "Criado em": d.criadoEm || "—",
+      Vendedora: vendedoraById(d.vendedoraId)?.nome || "Não atribuído",
+    }));
+  }, [tipo, vendedoraId, deals, activities, stages, clientById, vendedoraById]);
+
+  const exportar = () => {
+    if (!linhas.length) return;
+    const headers = Object.keys(linhas[0]);
+    const linha = (vals) => vals.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";");
+    const csv = [linha(headers), ...linhas.map(l => linha(headers.map(h => {
+      const v = l[h];
+      return typeof v === "number" ? String(v).replace(".", ",") : v;
+    })))].join("\r\n");
+    // \uFEFF (BOM) garante que o Excel/LibreOffice abram os acentos certinho
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `relatorio_${tipo}_${todayStr()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const tipoLabel = TIPOS_RELATORIO.find(t => t.key === tipo)?.label || "";
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border bg-white p-4 flex flex-wrap items-end gap-3" style={{ borderColor: "#E4E7EC" }}>
+        <div>
+          <div className="text-xs font-medium mb-1" style={{ color: "#667085" }}>Vendedora</div>
+          <select
+            value={vendedoraId}
+            onChange={(e) => setVendedoraId(e.target.value)}
+            className="text-sm rounded-md border px-2.5 py-2"
+            style={{ borderColor: "#D7DCE3", color: "#344054", minWidth: 180 }}
+          >
+            <option value="">Todas as vendedoras</option>
+            {vendedoras.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+          </select>
+        </div>
+        <div>
+          <div className="text-xs font-medium mb-1" style={{ color: "#667085" }}>Tipo de relatório</div>
+          <select
+            value={tipo}
+            onChange={(e) => setTipo(e.target.value)}
+            className="text-sm rounded-md border px-2.5 py-2"
+            style={{ borderColor: "#D7DCE3", color: "#344054", minWidth: 220 }}
+          >
+            {TIPOS_RELATORIO.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
+        </div>
+        <button
+          onClick={exportar}
+          disabled={!linhas.length}
+          className="ml-auto inline-flex items-center gap-1.5 text-sm font-medium rounded-lg px-4 py-2.5 text-white"
+          style={{ background: linhas.length ? "#1FBE7A" : "#B4E8CE" }}
+        >
+          <Upload size={14} style={{ transform: "rotate(180deg)" }} /> Exportar para Excel / LibreOffice (.csv)
+        </button>
+      </div>
+
+      <div className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: "#E4E7EC" }}>
+        <div className="px-4 py-3 border-b text-sm font-semibold flex items-center justify-between" style={{ borderColor: "#E4E7EC", color: "#172433" }}>
+          <span>{tipoLabel}</span>
+          <span className="text-xs font-normal" style={{ color: "#98A2B3" }}>{linhas.length} registro(s)</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: "#F9FAFB" }}>
+                {linhas[0] && Object.keys(linhas[0]).map(h => (
+                  <th key={h} className="text-left px-4 py-2.5 font-medium" style={{ color: "#667085" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.slice(0, 200).map((l, i) => (
+                <tr key={i} className="border-t" style={{ borderColor: "#F0F1F3" }}>
+                  {Object.keys(l).map(h => (
+                    <td key={h} className="px-4 py-2.5" style={{ color: "#475467" }}>
+                      {typeof l[h] === "number" ? brl(l[h]) : l[h]}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {linhas.length === 0 && (
+                <tr><td className="text-center py-8 text-sm" style={{ color: "#98A2B3" }}>Nenhum registro encontrado para esse filtro.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {linhas.length > 200 && (
+          <div className="px-4 py-2 text-xs border-t" style={{ borderColor: "#E4E7EC", color: "#98A2B3" }}>
+            Mostrando os 200 primeiros na tela — o arquivo exportado traz todos os {linhas.length} registros.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------------- CRM Shell (dados + rotas) ----------------
 function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
   const [db, setDb] = useState(null);
@@ -516,7 +725,12 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
           <div className="flex-1 overflow-auto p-5">
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<EmConstrucao titulo="Dashboard" />} />
+              <Route path="/dashboard" element={
+                <DashboardView
+                  clients={scopedClients} deals={scopedDeals} activities={scopedActivities}
+                  stages={db.stages} vendedoraById={vendedoraById} isAdmin={isAdmin}
+                />
+              } />
               <Route path="/atividades" element={
                 <AtividadesView
                   activities={scopedActivities} clientById={clientById}
@@ -552,7 +766,13 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
                 />
               } />
               <Route path="/produtos" element={<EmConstrucao titulo="Produtos" />} />
-              {isAdmin && <Route path="/relatorios" element={<EmConstrucao titulo="Relatórios" />} />}
+              {isAdmin && <Route path="/relatorios" element={
+                <RelatoriosView
+                  clients={db.clients} deals={db.deals} activities={db.activities}
+                  stages={db.stages} vendedoras={db.vendedoras} vendedoraById={vendedoraById}
+                  clientById={clientById}
+                />
+              } />}
               {isAdmin && <Route path="/distribuir" element={
                 <DistribuirView
                   clients={db.clients} vendedoras={db.vendedoras}

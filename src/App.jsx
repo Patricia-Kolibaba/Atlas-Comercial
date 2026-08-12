@@ -948,6 +948,8 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
   const [ordenarPor, setOrdenarPor] = useState(null);
   const [ordenarDirecao, setOrdenarDirecao] = useState("asc");
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(null); // id do cliente a confirmar
+  const [porPagina, setPorPagina] = useState(10);
+  const [paginaAtual, setPaginaAtual] = useState(1);
 
   const { ordem: ordemColunas, mover: moverColuna, resetar: resetarColunas } = useColunasClientes(currentUser, isAdmin);
 
@@ -990,8 +992,17 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
     }
   };
 
-  const allSelected = filtered.length > 0 && filtered.every(c => selected.includes(c.id));
-  const toggleAll = () => setSelected(allSelected ? [] : filtered.map(c => c.id));
+  // volta pra página 1 sempre que o resultado muda (senão a pessoa pode ficar "perdida" numa página vazia)
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [q, filtroVendedora, filtroEtapa, filtroEstado, filtroSituacao, porPagina]);
+
+  const totalPaginas = Math.max(1, Math.ceil(sorted.length / porPagina));
+  const paginaSegura = Math.min(paginaAtual, totalPaginas);
+  const paginado = sorted.slice((paginaSegura - 1) * porPagina, paginaSegura * porPagina);
+
+  const allSelected = paginado.length > 0 && paginado.every(c => selected.includes(c.id));
+  const toggleAll = () => setSelected(allSelected ? selected.filter(id => !paginado.some(c => c.id === id)) : [...new Set([...selected, ...paginado.map(c => c.id)])]);
   const toggleOne = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const applyBulk = () => {
@@ -1176,7 +1187,7 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
             </tr>
           </thead>
           <tbody>
-            {sorted.map(c => {
+            {paginado.map(c => {
               const vend = vendedoraById(c.vendedoraId);
               return (
                 <tr key={c.id} className="border-t" style={{ borderColor: "#F0F1F3" }}>
@@ -1227,6 +1238,46 @@ function ClientesView({ clients, isAdmin, vendedoraById, deals, stages, stageByI
           </tbody>
         </table>
       </div>
+
+      {sorted.length > 0 && (
+        <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2 text-sm" style={{ color: "#667085" }}>
+            <span>Ver</span>
+            <select
+              value={porPagina}
+              onChange={(e) => setPorPagina(Number(e.target.value))}
+              className="text-sm rounded-md border px-2 py-1"
+              style={{ borderColor: "#D7DCE3", color: "#344054" }}
+            >
+              <option value={10}>10</option>
+              <option value={30}>30</option>
+              <option value={50}>50</option>
+            </select>
+            <span>por página · {sorted.length} cliente(s) no total</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPaginaAtual(p => Math.max(1, p - 1))}
+              disabled={paginaSegura === 1}
+              className="text-sm font-medium rounded-md border px-3 py-1.5"
+              style={{ borderColor: "#D7DCE3", color: paginaSegura === 1 ? "#B4BCC6" : "#344054" }}
+            >
+              Anterior
+            </button>
+            <span className="text-sm" style={{ color: "#667085" }}>
+              Página {paginaSegura} de {totalPaginas}
+            </span>
+            <button
+              onClick={() => setPaginaAtual(p => Math.min(totalPaginas, p + 1))}
+              disabled={paginaSegura === totalPaginas}
+              className="text-sm font-medium rounded-md border px-3 py-1.5"
+              style={{ borderColor: "#D7DCE3", color: paginaSegura === totalPaginas ? "#B4BCC6" : "#344054" }}
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -807,11 +807,20 @@ function CrmShell({ isAdmin, currentUser, nome, onLogout }) {
             onSave={({ deal, atividade }) => {
               const newDealId = uid("d");
               setDb(prev => {
+                // garante que exista uma coluna no quadro para a etapa escolhida (Negócios criados, Ganhos, Orçamentos, Atividades, Ligações)
+                const tipoInfo = TIPOS_NEGOCIO.find(t => t.id === deal.etapa);
+                let stages = prev.stages;
+                if (tipoInfo && !stages.some(s => s.id === tipoInfo.id)) {
+                  const novaEtapa = { id: tipoInfo.id, nome: tipoInfo.nome, ...(tipoInfo.id === "negocios_ganhos" ? { closed: true, won: true } : {}) };
+                  const insertAt = stages.findIndex(s => s.protected);
+                  stages = [...stages];
+                  stages.splice(insertAt === -1 ? stages.length : insertAt, 0, novaEtapa);
+                }
                 const deals = [...prev.deals, { id: newDealId, criadoEm: todayStr(), ...deal }];
                 const activities = atividade
                   ? [...prev.activities, { id: uid("a"), concluida: false, dealId: newDealId, clientId: deal.clientId, vendedoraId: deal.vendedoraId, ...atividade }]
                   : prev.activities;
-                return { ...prev, deals, activities };
+                return { ...prev, stages, deals, activities };
               });
               setShowDealModal(false);
               showToast(atividade ? "Negócio e atividade criados." : "Negócio criado.");
@@ -1943,13 +1952,22 @@ function ActivityResultModal({ activity, client, onClose, onSave }) {
   );
 }
 
+// opções fixas do dropdown "Etapa inicial" do formulário Novo negócio
+const TIPOS_NEGOCIO = [
+  { id: "negocios_criados", nome: "Negócios criados" },
+  { id: "negocios_ganhos", nome: "Negócios ganhos" },
+  { id: "orcamentos", nome: "Orçamentos" },
+  { id: "atividades", nome: "Atividades" },
+  { id: "ligacoes", nome: "Ligações" },
+];
+
 function DealModal({ isAdmin, currentUser, clients, vendedoras, stages, onClose, onSave }) {
   const [clientId, setClientId] = useState(clients[0]?.id || "");
   const [titulo, setTitulo] = useState("");
   const [contato, setContato] = useState("");
   const [previsaoFechamento, setPrevisaoFechamento] = useState("");
   const [valor, setValor] = useState("");
-  const [etapa, setEtapa] = useState(stages[0]?.id || "");
+  const [etapa, setEtapa] = useState(TIPOS_NEGOCIO[0].id);
   const [vendedoraId, setVendedoraId] = useState(isAdmin ? (vendedoras[0]?.id || "") : currentUser.id);
   const [error, setError] = useState("");
 
@@ -1991,7 +2009,7 @@ function DealModal({ isAdmin, currentUser, clients, vendedoras, stages, onClose,
       </div>
       <Field label="Etapa inicial">
         <select value={etapa} onChange={e => setEtapa(e.target.value)} className={inputCls} style={inputStyle}>
-          {stages.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+          {TIPOS_NEGOCIO.map(t => <option key={t.id} value={t.id}>{t.nome}</option>)}
         </select>
       </Field>
       {isAdmin && (
